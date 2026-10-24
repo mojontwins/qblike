@@ -88,6 +88,8 @@ WHILE (INP(&H3DA) AND 8) = 0: WEND         '   (o WAIT &H3DA, 8)
 OUT &H3C8, 0: OUT &H3C9, r: OUT &H3C9, g: OUT &H3C9, b   ' paleta VGA
 k = INP(&H60)                              ' último código de tecla
 IF MULTIKEY(75) THEN ...                   ' NUEVO: tecla pulsada (varias a la vez)
+MOUSE x, y, b                              ' NUEVO: posición del ratón y botones
+MOUSE ON                                   ' NUEVO: muestra el cursor del ratón (MOUSE OFF lo oculta; oculto por defecto)
 PUT (x, y), sprite(0), MASK                ' NUEVO: PUT saltándose el color 0
 CLIP 0, 20, 319, 199                       ' NUEVO: área de recorte para PUT
 ```
@@ -157,9 +159,10 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 | `src/doslike/` | dos-like (con dos pequeños cambios, abajo) |
 
 Cambios en dos-like: `setcrtmode()` para activar o desactivar el efecto CRT en tiempo de ejecución,
-Alt+Intro para pantalla completa, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
+Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera de la ventana, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
 (que bloqueaba el teclado), y atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`). Se compila con `DISABLE_SCREEN_FRAME`
-(sin el marco del monitor).
+(sin el marco del monitor) y `DISABLE_SYSTEM_CURSOR` (QBLike dibuja su propio cursor de ratón, como el
+controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 
 ## Limitaciones conocidas
 
@@ -173,5 +176,5 @@ Alt+Intro para pantalla completa, en Windows impedir que Alt/F10 activen el men�
 
 ## Licencia
 
-dos-like es de Mattias Gustavsson (MIT o dominio público, a elegir). El resto del código de QBLike se
-ha escrito para este proyecto y puedes publicarlo con la licencia que prefieras.
+dos-like es de Mattias Gustavsson (MIT o dominio público, a elegir).
+qblike tiene licencia MIT.

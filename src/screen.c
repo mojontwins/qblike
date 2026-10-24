@@ -8,6 +8,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <time.h>
+extern int g_mouse_cursor;
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -282,6 +283,7 @@ void scr_init(void) {
     setup_mode(0, 80, 25);
 }
 void scr_reset(void) {
+    g_mouse_cursor = 0;
     /* QBasic keeps the output screen between runs but resets mode to text */
     if (S.mode != 0 || S.cols != 80 || S.rows != 25) setup_mode(0, 80, 25);
     S.fg = 7; S.bg = 0;
@@ -545,6 +547,71 @@ static void set_vm(int vm) {
 }
 
 /* present arbitrary text cells (used by the IDE): attr low nibble fg, high nibble bg */
+
+/* ------------------------------------------------------------------ */
+/* emulated mouse cursor (drawn only into the presented image, so the  */
+/* program's video memory never contains it)                           */
+/* ------------------------------------------------------------------ */
+int g_mouse_cursor = 0;     /* MOUSE ON / MOUSE OFF for programs (OFF by default) */
+
+/* classic DOS mouse-driver arrow: '#' outline (black), '.' fill (white) */
+static const char *arrow_shape[16] = {
+    "#           ",
+    "##          ",
+    "#.#         ",
+    "#..#        ",
+    "#...#       ",
+    "#....#      ",
+    "#.....#     ",
+    "#......#    ",
+    "#.......#   ",
+    "#........#  ",
+    "#.....#####  ",
+    "#..#..#     ",
+    "#.# #..#    ",
+    "##  #..#    ",
+    "     #..#   ",
+    "     ####   "
+};
+
+/* text cell under the pointer is shown with inverted colors */
+static void overlay_text_cursor(uint16_t *cells, int cols, int rows) {
+    int mx = mousex(), my = mousey();
+    if (mx < 0 || my < 0 || mx >= cols || my >= rows) return;
+    uint16_t c = cells[my * cols + mx];
+    int fg = (c >> 8) & 15, bg = (c >> 12) & 15;
+    cells[my * cols + mx] = (uint16_t)((c & 0xFF) | ((fg ^ 7) << 8) | ((bg ^ 7) << 12));
+}
+
+static int nearest_index(int n, int r, int g, int b, int use_attr) {
+    int best = 0; long bd = 1L << 30;
+    for (int i = 0; i < n; i++) {
+        int d = use_attr ? S.attrpal[i] : i;
+        long dr = S.rgb[d][0] - r, dg = S.rgb[d][1] - g, db = S.rgb[d][2] - b;
+        long dist = dr * dr + dg * dg + db * db;
+        if (dist < bd) { bd = dist; best = i; }
+    }
+    return best;
+}
+
+static void overlay_gfx_cursor(uint8_t *pix, int w, int h) {
+    int mx = mousex(), my = mousey();
+    if (mx < 0 || my < 0 || mx >= w || my >= h) return;
+    int n = S.colors, attr = S.colors <= 16;
+    int white = nearest_index(n, 63, 63, 63, attr), black = nearest_index(n, 0, 0, 0, attr);
+    if (white == black) black = (white + 1) % n;
+    /* in 640-wide modes with low height (SCREEN 2, 8) pixels are tall: halve rows */
+    int ystep = (S.h <= 200 && S.w >= 640) ? 2 : 1;
+    for (int yy = 0; yy < 16; yy += ystep)
+        for (int xx = 0; arrow_shape[yy][xx]; xx++) {
+            char c = arrow_shape[yy][xx];
+            if (c == ' ') continue;
+            int px = mx + xx, py = my + yy / ystep;
+            if (px >= w || py >= h) continue;
+            pix[py * w + px] = (uint8_t)(c == '#' ? black : white);
+        }
+}
+
 void present_text_cells(const uint16_t *cells, int cols, int rows, int cx, int cy, int curvis) {
     int vm = videomode_80x25_9x16;
     if (rows == 43) vm = videomode_80x43_8x8;
@@ -556,6 +623,7 @@ void present_text_cells(const uint16_t *cells, int cols, int rows, int cx, int c
     }
     unsigned char *buf = screenbuffer();
     memcpy(buf, cells, sizeof(uint16_t) * (size_t)(cols * rows));
+    overlay_text_cursor((uint16_t *)buf, cols, rows);    /* the IDE always shows the mouse block */
     if (curvis) { gotoxy(cx, cy); curson(); } else cursoff();
 }
 
@@ -576,6 +644,7 @@ static void present_program(void) {
             if ((attr & 0x80) && bp) fg = bg;
             dst[i] = (uint16_t)((c & 0xFF) | (fg << 8) | (bg << 12));
         }
+        if (g_mouse_cursor) overlay_text_cursor(dst, S.cols, S.rows);
         if (S.curvis && S.cx < S.cols) { gotoxy(S.cx, S.cy); curson(); }
         else if (S.curvis) { gotoxy(S.cols - 1, S.cy); curson(); }
         else cursoff();
@@ -585,6 +654,7 @@ static void present_program(void) {
     if (S.colors == 256) for (int i = 0; i < 256; i++) setpal(i, S.rgb[i][0], S.rgb[i][1], S.rgb[i][2]);
     else for (int i = 0; i < 16; i++) setpal(i, S.rgb[S.attrpal[i]][0], S.rgb[S.attrpal[i]][1], S.rgb[S.attrpal[i]][2]);
     memcpy(screenbuffer(), S.pix[S.vpage], (size_t)(S.w * S.h));
+    if (g_mouse_cursor) overlay_gfx_cursor(screenbuffer(), S.w, S.h);
 }
 
 void scr_present(int force) {
@@ -1903,3 +1973,16 @@ void gfx_clip(int x1, int y1, int x2, int y2, int has) {
     S.clx1 = x1; S.cly1 = y1; S.clx2 = x2; S.cly2 = y2;
 }
 void gfx_clip_reset(void) { if (S.mode != 0) { S.clx1 = 0; S.cly1 = 0; S.clx2 = S.w - 1; S.cly2 = S.h - 1; } }
+
+/* MOUSE x, y, buttons: position in the current mode's resolution (cells in SCREEN 0),
+   -1,-1 when the pointer is outside the picture or the window; bit 0 left, bit 1 right */
+void sys_mouse(int *x, int *y, int *b) {
+    *x = mousex();
+    *y = mousey();
+    if (*x < 0 || *y < 0) { *x = -1; *y = -1; }
+    else {
+        int maxx = S.mode == 0 ? S.cols - 1 : S.w - 1, maxy = S.mode == 0 ? S.rows - 1 : S.h - 1;
+        if (*x > maxx || *y > maxy) { *x = -1; *y = -1; }
+    }
+    *b = (keystate(KEY_LBUTTON) ? 1 : 0) | (keystate(KEY_RBUTTON) ? 2 : 0);
+}

@@ -66,6 +66,8 @@ void app_screenmode( app_t* app, app_screenmode_t screenmode );
 void app_window_size( app_t* app, int width, int height );
 int app_window_width( app_t* app );
 int app_window_height( app_t* app );
+int app_drawable_width( app_t* app );  /* QBLike: current GL drawable size (also in fullscreen) */
+int app_drawable_height( app_t* app );
 
 void app_window_pos( app_t* app, int x, int y );
 int app_window_x( app_t* app );
@@ -1159,6 +1161,8 @@ void app_pointer_default( app_t* app, int* width, int* height, APP_U32* pixels_a
 void app_pointer_pos( app_t* app, int x, int y ) { }
 int app_pointer_x( app_t* app ) { return 0; }
 int app_pointer_y( app_t* app ) { return 0;}
+int app_drawable_width( app_t* app ) { (void) app; return 0; }
+int app_drawable_height( app_t* app ) { (void) app; return 0; }
 void app_pointer_limit( app_t* app, int x, int y, int width, int height ) { }
 void app_pointer_limit_off( app_t* app ) { }
 void app_interpolation( app_t* app, app_interpolation_t interpolation ) { }
@@ -2778,6 +2782,10 @@ int app_pointer_y( app_t* app )
     }
 
 
+int app_drawable_width( app_t* app ) { return app->gl.window_width; }
+int app_drawable_height( app_t* app ) { return app->gl.window_height; }
+
+
 void app_pointer_limit( app_t* app, int x, int y, int width, int height )
     {
     app->clip_cursor = TRUE;
@@ -3799,6 +3807,7 @@ void app_pointer_pos( app_t* app, int x, int y )
 int app_pointer_x( app_t* app )
     {
     int x = 0;
+    if( SDL_GetMouseFocus() != app->window ) return -100000; /* QBLike: pointer is outside the window */
     SDL_GetMouseState( &x, NULL );
     return x;
     }
@@ -3807,9 +3816,14 @@ int app_pointer_x( app_t* app )
 int app_pointer_y( app_t* app )
     {
     int y = 0;
+    if( SDL_GetMouseFocus() != app->window ) return -100000;
     SDL_GetMouseState( NULL, &y );
     return y;
     }
+
+
+int app_drawable_width( app_t* app ) { return app->gl.window_width; }
+int app_drawable_height( app_t* app ) { return app->gl.window_height; }
 
 
 void app_pointer_limit( app_t* app, int x, int y, int width, int height ) { /* NOT IMPLEMENTED */ }
@@ -4510,6 +4524,10 @@ int app_pointer_y( app_t* app )
     {
     return app->pointer_y;
     }
+
+
+int app_drawable_width( app_t* app ) { return app->gl.window_width; }
+int app_drawable_height( app_t* app ) { return app->gl.window_height; }
 
 
 void app_pointer_limit( app_t* app, int x, int y, int width, int height ) { /* NOT IMPLEMENTED */ }

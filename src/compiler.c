@@ -2535,6 +2535,19 @@ static void compile_statement(void) {
             }
             compile_getput_file(S_PUTF);
             return;
+        case KW_MOUSE: {
+            /* MOUSE x, y, buttons   (QBLike extension) */
+            int si = emit(S_MOUSE);
+            if (acceptkw(KW_ON)) { ST(si)->i1 = 1; return; }      /* MOUSE ON: show the cursor */
+            if (acceptkw(KW_OFF)) { ST(si)->i1 = 2; return; }     /* MOUSE OFF: hide it */
+            for (int i = 0; i < 3; i++) {
+                if (i) expectop(',');
+                Expr *v = parse_lvalue();
+                need_num(v);
+                stmt_addarg(si, v);
+            }
+            return;
+        }
         case KW_CLIP: {
             /* CLIP x1, y1, x2, y2   |   CLIP  (whole screen) */
             int si = emit(S_CLIP);

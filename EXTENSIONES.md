@@ -3,7 +3,7 @@
 Referencia de todo lo que QBLike añade a QBasic 1.1, tanto instrucciones nuevas como emulación del
 hardware de la época.
 
-Los programas que no usan las instrucciones nuevas funcionan igual que en QBasic. Como `MULTIKEY`, `CLIP`,
+Los programas que no usan las instrucciones nuevas funcionan igual que en QBasic. Como `MULTIKEY`, `MOUSE`, `CLIP`,
 `LOADBMP`, `LOADGIF` y `LOADPAL` son palabras reservadas en QBLike, no pueden usarse como nombres de variable.
 
 La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen en vez de dar
@@ -13,6 +13,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
 
 - [Instrucciones nuevas](#instrucciones-nuevas)
   - [MULTIKEY](#multikey)
+  - [MOUSE](#mouse)
   - [PUT ... MASK](#put--mask)
   - [CLIP (y PUT con recorte)](#clip)
   - [LOADBMP](#loadbmp)
@@ -51,6 +52,74 @@ LOOP UNTIL MULTIKEY(1)                      ' Esc
 ```
 
 Los códigos están en la [tabla de códigos de tecla](#tabla-de-códigos-de-tecla).
+
+---
+
+### MOUSE
+
+```
+MOUSE x%, y%, botones%
+MOUSE ON | OFF
+```
+
+Lee el ratón y guarda el resultado en tres variables numéricas.
+
+- **`x%`, `y%`**: posición del puntero sobre la pantalla visible, **con la resolución del modo actual**:
+
+  | Modo | x | y |
+  |---|---|---|
+  | SCREEN 13, 1, 7 | 0 – 319 | 0 – 199 |
+  | SCREEN 2, 8 | 0 – 639 | 0 – 199 |
+  | SCREEN 9, 10 | 0 – 639 | 0 – 349 |
+  | SCREEN 11, 12 | 0 – 639 | 0 – 479 |
+  | SCREEN 0 | columna (desde 0) | fila (desde 0) |
+
+  Valen **`-1, -1`** si el puntero está fuera de la imagen (por ejemplo, sobre las bandas negras en pantalla
+  completa) o fuera de la ventana. Las coordenadas son absolutas: no se les aplica `VIEW` ni `WINDOW`.
+- **`botones%`**: bit 0 = botón izquierdo y bit 1 = botón derecho. Vale `1` con el izquierdo pulsado,
+  `2` con el derecho, `3` con los dos y `0` sin ninguno.
+
+La conversión tiene en cuenta el escalado de la ventana y funciona igual con el efecto CRT activado
+o desactivado.
+
+```
+MOUSE ON
+MOUSE OFF
+```
+
+Muestran u ocultan el **cursor del ratón**. Como el controlador de ratón de DOS, QBLike dibuja su propio
+cursor sobre la pantalla emulada (el puntero del sistema se oculta sobre la ventana): una flecha blanca con
+borde negro en los modos gráficos y un bloque de colores invertidos en SCREEN 0. Se mueve a la resolución
+del modo, se ve igual en ventana y en pantalla completa, y sigue el efecto CRT.
+
+- Está **oculto por defecto** al empezar cada programa: hay que usar `MOUSE ON` para verlo. Con el
+  cursor oculto, `MOUSE x%, y%, b%` sigue leyendo la posición y los botones (útil si el juego dibuja
+  su propio puntero).
+- Se superpone solo en la imagen presentada: **no forma parte de la memoria de vídeo**, así que `POINT`,
+  `GET` y `PEEK` nunca lo ven, y no hace falta ocultarlo antes de dibujar (al contrario que en DOS).
+- La flecha usa los colores más parecidos al blanco y al negro de la paleta actual.
+- El editor muestra siempre el bloque invertido, como QBasic.
+
+```basic
+SCREEN 13
+MOUSE ON                                            ' muestra el cursor
+DO
+    MOUSE x%, y%, b%
+    IF x% >= 0 THEN
+        IF b% AND 1 THEN PSET (x%, y%), 15          ' izquierdo: dibuja
+        IF b% AND 2 THEN CIRCLE (x%, y%), 5, 0      ' derecho: borra
+    END IF
+LOOP UNTIL INKEY$ = CHR$(27)
+```
+
+Como `MOUSE` lee el estado en el momento, para detectar un clic (pulsar y soltar) hay que comparar
+con el valor anterior:
+
+```basic
+MOUSE x%, y%, b%
+IF (b% AND 1) AND NOT (antes% AND 1) THEN PRINT "clic en"; x%; y%
+antes% = b%
+```
 
 ---
 

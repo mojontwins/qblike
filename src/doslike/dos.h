@@ -3040,7 +3040,7 @@ static int app_proc( app_t* app, void* user_data ) {
         APP_U32 blank = 0;
         app_pointer( app, 1, 1, &blank, 0, 0 );
     #else
-        if( fullscreen ) {
+        if( 0 ) { /* QBLike: the pointer stays visible in fullscreen (MOUSE statement, IDE) */
             APP_U32 blank = 0;
             app_pointer( app, 1, 1, &blank, 0, 0 );
         } else {
@@ -3188,7 +3188,7 @@ static int app_proc( app_t* app, void* user_data ) {
                         APP_U32 blank = 0;
                         app_pointer( app, 1, 1, &blank, 0, 0 );
                     #else
-                        if( fullscreen ) {
+                        if( 0 ) { /* QBLike: pointer stays visible in fullscreen */
                             APP_U32 blank = 0;
                             app_pointer( app, 1, 1, &blank, 0, 0 );
                         } else {
@@ -3259,12 +3259,31 @@ static int app_proc( app_t* app, void* user_data ) {
 
         int mouse_x = app_pointer_x( app );
         int mouse_y = app_pointer_y( app );
-        if( crt ) {
-            crtemu_pc_coordinates_window_to_bitmap( crt, width * internals->screen.cellwidth, 
-                height * internals->screen.cellheight, &mouse_x, &mouse_y );
+        int bmp_w = width * internals->screen.cellwidth, bmp_h = height * internals->screen.cellheight;
+        int mouse_outside = ( mouse_x <= -100000 );
+        if( crt && dos_crt_enabled ) {
+            crtemu_pc_coordinates_window_to_bitmap( crt, bmp_w, bmp_h, &mouse_x, &mouse_y );
+        } else if( bmp_w > 0 && bmp_h > 0 ) {
+            /* QBLike: inverse of the crisp 4:3 presentation (centred, aspect-fitted, linear scaling) */
+            int shown_h = ( bmp_w * 3 ) / 4;
+            if( shown_h > 768 || bmp_w > 1024 || shown_h <= 0 ) shown_h = bmp_h;
+            float ww = (float) app_drawable_width( app ), wh = (float) app_drawable_height( app );
+            float hs = ww / (float) bmp_w, vs = wh / (float) shown_h;
+            float scale = hs < vs ? hs : vs;
+            if( scale <= 0.0f ) scale = 1.0f;
+            float hb = ( ww - scale * bmp_w ) / 2.0f, vb = ( wh - scale * shown_h ) / 2.0f;
+            float fx = ( mouse_x - hb ) / scale;
+            float fy = ( ( mouse_y - vb ) / scale ) * (float) bmp_h / (float) shown_h;
+            mouse_x = fx < 0.0f ? -1 : (int) fx;
+            mouse_y = fy < 0.0f ? -1 : (int) fy;
         }
-        internals->input.mouse_x = mouse_x / internals->screen.cellwidth;
-        internals->input.mouse_y = mouse_y / internals->screen.cellheight;
+        if( mouse_outside || mouse_x < 0 || mouse_y < 0 || mouse_x >= bmp_w || mouse_y >= bmp_h ) {
+            internals->input.mouse_x = -1;   /* QBLike: pointer outside the picture or the window */
+            internals->input.mouse_y = -1;
+        } else {
+            internals->input.mouse_x = mouse_x / internals->screen.cellwidth;
+            internals->input.mouse_y = mouse_y / internals->screen.cellheight;
+        }
 
         memcpy( internals->input.keystate, keystate, sizeof( internals->input.keystate ) );
 

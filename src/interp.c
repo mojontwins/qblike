@@ -1694,6 +1694,19 @@ static int exec(Frame *f, int pc) {
                 break;
             }
             case S_LOADIMG: case S_LOADPAL: exec_loadimg(s); pc++; break;
+            case S_MOUSE: {
+                extern void sys_mouse(int *x, int *y, int *b);
+                extern int g_mouse_cursor;
+                if (s->i1) { g_mouse_cursor = s->i1 == 1; scr_present(1); pc++; break; }
+                int mx, my, mb;
+                sys_mouse(&mx, &my, &mb);
+                Value *v;
+                v = lval(s->args[0]); v->n = fit_num(v->t, mx);
+                v = lval(s->args[1]); v->n = fit_num(v->t, my);
+                v = lval(s->args[2]); v->n = fit_num(v->t, mb);
+                pc++;
+                break;
+            }
             case S_CLIP: {
                 extern void gfx_clip(int x1, int y1, int x2, int y2, int has);
                 if (!s->e1) gfx_clip(0, 0, 0, 0, 0);

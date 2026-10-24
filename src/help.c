@@ -94,6 +94,7 @@ static const HelpEnt H[] = {
 { "MKI$", "MKI$(integer%)  MKL$(long&)  MKS$(single!)  MKD$(double#)", "Convert numbers to binary strings (for files).", "CVI" },
 { "MKDIR", "MKDIR pathspec$", "Creates a directory.", "CHDIR RMDIR" },
 { "MOD", "numeric-expression1 MOD numeric-expression2", "Integer remainder of a division (operands are rounded first).", "Operators" },
+{ "MOUSE", "MOUSE x%, y%, buttons%   or   MOUSE ON | OFF", "QBLike extension. Reads the mouse into three numeric variables.\n\nx% and y% get the pointer position on the visible screen in the current\nmode's resolution (0-319 by 0-199 in SCREEN 13 and SCREEN 1, 0-639 by\n0-479 in SCREEN 12; text column and row, from 0, in SCREEN 0). They are\n-1, -1 when the pointer is outside the picture or the window. Coordinates\nare absolute: VIEW and WINDOW are not applied.\n\nbuttons%: bit 0 = left button, bit 1 = right button\n(1 left, 2 right, 3 both, 0 none).\n\nMOUSE ON / MOUSE OFF show or hide the mouse cursor (an arrow in graphics\nmodes, an inverted block in SCREEN 0). It is hidden when a program\nstarts; MOUSE still reads the mouse while it is hidden. The cursor is overlaid on the displayed picture only, so POINT,\nGET and PEEK never see it.\n\n  DO\n      MOUSE x%, y%, b%\n      IF b% AND 1 THEN PSET (x%, y%), 15\n  LOOP UNTIL INKEY$ = CHR$(27)", "MULTIKEY INKEY$" },
 { "MULTIKEY", "MULTIKEY(scancode%)", "QBLike extension. Returns -1 while the key with the given scan code is\nheld down, 0 otherwise. Several keys can be checked at once, ideal for\ngames.\n\nCommon scan codes: Esc 1, Enter 28, Space 57, Ctrl 29, Alt 56,\nLeft Shift 42, Up 72, Down 80, Left 75, Right 77, A 30, D 32, S 31, W 17.", "INKEY$ INP" },
 { "NAME", "NAME oldspec$ AS newspec$", "Renames a file.", "KILL" },
 { "OCT$", "OCT$(numeric-expression&)", "Returns the octal representation of a number.", "HEX$" },
@@ -191,7 +192,7 @@ static const char *extra_topics[][2] = {
       "  Graphics:       <<SCREEN>> <<PSET>> <<LINE>> <<CIRCLE>> <<PAINT>> <<DRAW>> <<GET>> <<PUT>>\n"
       "                  <<PALETTE>> <<VIEW>> <<WINDOW>> <<PCOPY>> <<POINT>>\n"
       "                  <<LOADBMP>> <<LOADGIF>> <<LOADPAL>> <<CLIP>>\n"
-      "  Keyboard:       <<INKEY$>> <<MULTIKEY>> <<INPUT$>> <<SLEEP>>\n"
+      "  Keyboard/mouse: <<INKEY$>> <<MULTIKEY>> <<MOUSE>> <<INPUT$>> <<SLEEP>>\n"
       "  Sound:          <<BEEP>> <<SOUND>> <<PLAY>>\n"
       "  Strings:        <<LEFT$>> <<MID$>> <<INSTR>> <<LEN>> <<STR$>> <<VAL>> <<CHR$>> <<ASC>>\n"
       "  Math:           <<ABS>> <<INT>> <<FIX>> <<SQR>> <<SIN>> <<RND>> <<RANDOMIZE>>\n"
@@ -270,6 +271,7 @@ static const char *extra_topics[][2] = {
       "  * Palette ports: OUT &H3C8, index: OUT &H3C9, r: OUT &H3C9, g: OUT &H3C9, b\n"
       "  * Keyboard scan codes: INP(&H60)\n"
       "  * Several keys at once: <<MULTIKEY>>(scancode)\n"
+      "  * Mouse: <<MOUSE>> x, y, buttons\n"
       "  * Transparent sprites: PUT (x, y), sprite(0), MASK   (see <<PUT>>)\n"
       "  * Clipped sprites: PUT never fails off-screen; area set with <<CLIP>>\n"
       "  * Page flipping: SCREEN 7, 0, 1, 0 ... <<PCOPY>> 1, 0\n"
