@@ -226,7 +226,12 @@ static void clear_text_rows(int page, int top, int bot) {
     }
 }
 
+/* emulated EGA/VGA registers used for direct access to planar video memory */
+static int vga_seq_idx = 0, vga_map_mask = 0x0F;   /* &H3C4/&H3C5, index 2 = map mask (planes written) */
+static int vga_gc_idx = 0, vga_read_map = 0;       /* &H3CE/&H3CF, index 4 = read map select (plane read) */
+
 static void setup_mode(int mode, int cols, int rows) {
+    vga_seq_idx = 0; vga_map_mask = 0x0F; vga_gc_idx = 0; vga_read_map = 0;
     const ModeInfo *mi = NULL;
     for (int i = 0; modes[i].mode >= 0; i++) if (modes[i].mode == mode) mi = &modes[i];
     if (!mi) rt_error(5);
@@ -1639,6 +1644,36 @@ void gfx_pcopy(int src, int dst) {
     }
 }
 
+/* ---- direct video memory emulation (PEEK/POKE/BLOAD/BSAVE) ----
+   SCREEN 13       A000: linear, one byte per pixel (64000 bytes)
+   SCREEN 7-12     A000: planar EGA/VGA, W/8 bytes per line and plane; writes go to the planes enabled
+                   in the map mask (OUT &H3C4,2: OUT &H3C5,mask), reads come from the read map plane
+                   (OUT &H3CE,4: OUT &H3CF,plane). Pages follow each other at 8K/16K/32K.
+   SCREEN 1, 2     B800: CGA, even lines at offset 0, odd lines at &H2000, 80 bytes per line
+   SCREEN 0        B800: character / attribute pairs, one page every 2K/4K/8K                       */
+static int planar_page_stride(void) {
+    switch (S.mode) { case 7: return 0x2000; case 8: return 0x4000; case 9: case 10: return 0x8000; }
+    return 0x10000;
+}
+/* locate the 8 pixels behind planar byte o; returns pointer to the first one or NULL */
+static uint8_t *planar_pixels(long o) {
+    int stride = planar_page_stride();
+    long page = o / stride, po = o % stride;
+    int bpl = S.w / 8;
+    if (page >= S.npages || po >= (long)bpl * S.h) return NULL;
+    return S.pix[page] + (po / bpl) * S.w + (po % bpl) * 8;
+}
+static uint8_t *cga_pixels(long o, int *ppb) {
+    if (o >= 0x4000) return NULL;
+    int bank = o >= 0x2000, r = (int)(o & 0x1FFF);
+    int line = (r / 80) * 2 + bank;
+    if (line >= S.h) return NULL;
+    *ppb = S.mode == 1 ? 4 : 8;
+    return S.pix[0] + (long)line * S.w + (r % 80) * *ppb;
+}
+static long text_page_stride(void) { return ((long)S.cols * S.rows * 2 + 2047) & ~2047L; }
+static int is_planar_mode(void) { return S.mode >= 7 && S.mode <= 12; }
+
 int gfx_peek(int seg, int off, int *ok) {
     *ok = 0;
     long lin = (long)seg * 16 + off;
@@ -1648,17 +1683,32 @@ int gfx_peek(int seg, int off, int *ok) {
         if (o < S.w * S.h) return S.pix[S.apage][o];
         return 0;
     }
+    if (lin >= 0xA0000 && lin < 0xB0000 && is_planar_mode()) {
+        uint8_t *px = planar_pixels(lin - 0xA0000);
+        *ok = 1;
+        if (!px) return 0;
+        int v = 0;
+        for (int k = 0; k < 8; k++) if ((px[k] >> vga_read_map) & 1) v |= 0x80 >> k;
+        return v;
+    }
+    if (lin >= 0xB8000 && lin < 0xC0000 && (S.mode == 1 || S.mode == 2)) {
+        int ppb; uint8_t *px = cga_pixels(lin - 0xB8000, &ppb);
+        *ok = 1;
+        if (!px) return 0;
+        int v = 0;
+        if (ppb == 4) for (int k = 0; k < 4; k++) v |= (px[k] & 3) << (6 - 2 * k);
+        else for (int k = 0; k < 8; k++) if (px[k] & 1) v |= 0x80 >> k;
+        return v;
+    }
     if (lin >= 0xB8000 && lin < 0xC0000 && S.mode == 0) {
         long o = lin - 0xB8000;
-        long pg = o / 4096;
-        o %= 4096;
+        long st = text_page_stride();
+        long pg = o / st;
+        o %= st;
         *ok = 1;
         if (pg >= S.npages || o / 2 >= S.cols * S.rows) return 0;
         uint16_t c = S.text[pg][o / 2];
-        if (o & 1) {
-            int a = c >> 8;
-            return (a & 0x0F) | ((a & 0x70)) | (a & 0x80);
-        }
+        if (o & 1) return c >> 8;
         return c & 0xFF;
     }
     if (lin >= 0x46C && lin <= 0x46F) {
@@ -1677,14 +1727,34 @@ void gfx_poke(int seg, int off, int v) {
         if (o < S.w * S.h) S.pix[S.apage][o] = (uint8_t)v;
         return;
     }
+    if (lin >= 0xA0000 && lin < 0xB0000 && is_planar_mode()) {
+        uint8_t *px = planar_pixels(lin - 0xA0000);
+        if (!px) return;
+        int cmask = S.colors - 1;
+        for (int k = 0; k < 8; k++) {
+            int bit = (v >> (7 - k)) & 1, c = px[k];
+            for (int p = 0; p < 4; p++)
+                if ((vga_map_mask >> p) & 1) c = bit ? (c | (1 << p)) : (c & ~(1 << p));
+            px[k] = (uint8_t)(c & cmask);
+        }
+        return;
+    }
+    if (lin >= 0xB8000 && lin < 0xC0000 && (S.mode == 1 || S.mode == 2)) {
+        int ppb; uint8_t *px = cga_pixels(lin - 0xB8000, &ppb);
+        if (!px) return;
+        if (ppb == 4) for (int k = 0; k < 4; k++) px[k] = (uint8_t)((v >> (6 - 2 * k)) & 3);
+        else for (int k = 0; k < 8; k++) px[k] = (uint8_t)((v >> (7 - k)) & 1);
+        return;
+    }
     if (lin >= 0xB8000 && lin < 0xC0000 && S.mode == 0) {
         long o = lin - 0xB8000;
-        long pg = o / 4096;
-        o %= 4096;
+        long st = text_page_stride();
+        long pg = o / st;
+        o %= st;
         if (pg >= S.npages || o / 2 >= S.cols * S.rows) return;
         uint16_t c = S.text[pg][o / 2];
-        if (o & 1) c = (uint16_t)((c & 0xFF) | (v << 8));
-        else c = (uint16_t)((c & 0xFF00) | v);
+        if (o & 1) c = (uint16_t)((c & 0xFF) | ((v & 0xFF) << 8));
+        else c = (uint16_t)((c & 0xFF00) | (v & 0xFF));
         S.text[pg][o / 2] = c;
     }
 }
@@ -1700,6 +1770,10 @@ void gfx_out(int port, int v) {
         if (++S.dac_write_comp == 3) { S.dac_write_comp = 0; S.dac_write_idx = (S.dac_write_idx + 1) & 255; }
         return;
     }
+    if (port == 0x3C4) { vga_seq_idx = v & 0x1F; return; }
+    if (port == 0x3C5) { if (vga_seq_idx == 2) vga_map_mask = v & 0x0F; return; }
+    if (port == 0x3CE) { vga_gc_idx = v & 0x1F; return; }
+    if (port == 0x3CF) { if (vga_gc_idx == 4) vga_read_map = v & 3; return; }
     /* other ports (speaker etc.) ignored */
 }
 
@@ -1723,6 +1797,10 @@ static int vsync_status(void) {
 int gfx_inp(int port) {
     if (port == 0x3DA || port == 0x3BA) return vsync_status();
     if (port == 0x60) return kb_lastscan();
+    if (port == 0x3C4) return vga_seq_idx;
+    if (port == 0x3C5) return vga_seq_idx == 2 ? vga_map_mask : 0;
+    if (port == 0x3CE) return vga_gc_idx;
+    if (port == 0x3CF) return vga_gc_idx == 4 ? vga_read_map : 0;
     if (port == 0x3C9) {
         int v = S.rgb[S.dac_read_idx][S.dac_read_comp];
         if (++S.dac_read_comp == 3) { S.dac_read_comp = 0; S.dac_read_idx = (S.dac_read_idx + 1) & 255; }
@@ -1746,36 +1824,105 @@ void gfx_waitvsync(void) {
     }
 }
 
-void gfx_bload(const char *name, int has, int off, int save, int len) {
-    long seglin = (long)(rs ? rs->defseg : 0) * 16;
+/* ---- BSAVE / BLOAD ----
+   File format: &HFD, segment, offset, length (16-bit little-endian words), then the data.
+   Only video memory is emulated: segment &HA000 (graphics) and &HB800 (text, CGA). Other segments
+   are ignored. The array form (VARPTR(array(i)) as offset) is handled by gfx_bload_array.        */
+void file_native_name(const char *in, int len, char *out, int outsz, int for_read);
+
+static FILE *bfile_open(const char *name, int namelen, int save) {
+    char path[1024];
+    file_native_name(name, namelen, path, sizeof path, !save);
+    FILE *f = fopen(path, save ? "wb" : "rb");
+    if (!f) rt_error(save ? 75 : 53);   /* Path/File access error, File not found */
+    return f;
+}
+static void bfile_header(FILE *f, int seg, long off, long len) {
+    unsigned char h[7] = { 0xFD, (unsigned char)(seg & 0xFF), (unsigned char)((seg >> 8) & 0xFF),
+                           (unsigned char)(off & 0xFF), (unsigned char)((off >> 8) & 0xFF),
+                           (unsigned char)(len & 0xFF), (unsigned char)((len >> 8) & 0xFF) };
+    fwrite(h, 1, 7, f);
+}
+static void bfile_read_header(FILE *f, int *seg, long *off, long *len) {
+    unsigned char h[7];
+    if (fread(h, 1, 7, f) != 7 || h[0] != 0xFD) { fclose(f); rt_error(54); }   /* Bad file mode */
+    *seg = h[1] | (h[2] << 8);
+    *off = h[3] | (h[4] << 8);
+    *len = h[5] | (h[6] << 8);
+}
+static int video_seg(int seg) { return seg == 0xA000 || seg == 0xB800; }
+
+void gfx_bload(const char *name, int namelen, int has, long off, int save, long len) {
+    off &= 0xFFFF;              /* &HFA00 is -1536 as an INTEGER: offsets and lengths are unsigned words */
+    len &= 0xFFFF;
+    int defseg = rs ? rs->defseg : 0;
     if (save) {
-        FILE *f = fopen(name, "wb");
-        if (!f) rt_error(75);
-        unsigned char hdr[7] = { 0xFD, (unsigned char)(rs->defseg & 0xFF), (unsigned char)(rs->defseg >> 8),
-                                 (unsigned char)(off & 0xFF), (unsigned char)(off >> 8), (unsigned char)(len & 0xFF), (unsigned char)(len >> 8) };
-        fwrite(hdr, 1, 7, f);
-        for (int i = 0; i < len; i++) {
+        FILE *f = bfile_open(name, namelen, 1);
+        bfile_header(f, defseg, off, len);
+        for (long i = 0; i < len; i++) {
             int ok;
-            int v = gfx_peek(rs->defseg, (off + i) & 0xFFFF, &ok);
-            fputc(v, f);
+            long o = off + i;
+            fputc(o <= 0xFFFF ? gfx_peek(defseg, (int)o, &ok) : 0, f);
         }
         fclose(f);
         return;
     }
-    FILE *f = fopen(name, "rb");
-    if (!f) rt_error(53);
-    unsigned char hdr[7];
-    if (fread(hdr, 1, 7, f) != 7 || hdr[0] != 0xFD) { fclose(f); rt_error(54); }
-    int foff = hdr[3] | (hdr[4] << 8);
-    int flen = hdr[5] | (hdr[6] << 8);
+    FILE *f = bfile_open(name, namelen, 0);
+    int fseg; long foff, flen;
+    bfile_read_header(f, &fseg, &foff, &flen);
+    /* with an explicit offset the data goes to DEF SEG when it points to video memory;
+       otherwise to the segment stored in the file */
+    int seg = (has && video_seg(defseg)) ? defseg : fseg;
     if (!has) off = foff;
-    for (int i = 0; i < flen; i++) {
-        int c = fgetc(f);
-        if (c == EOF) break;
-        gfx_poke(rs->defseg, (off + i) & 0xFFFF, c);
+    if (video_seg(seg)) {
+        for (long i = 0; i < flen; i++) {
+            int c = fgetc(f);
+            long o = off + i;
+            if (c == EOF || o > 0xFFFF) break;   /* SCREEN 13: anything past 64000 lands nowhere */
+            gfx_poke(seg, (int)o, c);
+        }
     }
-    (void)seglin;
     fclose(f);
+}
+
+/* raw bytes of a numeric array: element by element, so SINGLE/DOUBLE are rebuilt whole */
+static void arr_set_raw(Array *a, long idx, const unsigned char *b) {
+    Value *v = &a->v[idx];
+    switch (a->t) {
+        case T_INT: { int16_t x; memcpy(&x, b, 2); v->n = x; break; }
+        case T_LNG: { int32_t x; memcpy(&x, b, 4); v->n = x; break; }
+        case T_SNG: { float x; memcpy(&x, b, 4); v->n = x; break; }
+        case T_DBL: { double x; memcpy(&x, b, 8); v->n = x; break; }
+    }
+}
+
+void gfx_bload_array(const char *name, int namelen, Array *a, int index, int save, long len) {
+    if (a->t == T_STR || a->t == T_UDT) rt_error(13);
+    int es = elem_size(a);
+    long avail = (long)(a->count - index) * es;
+    if (save) {
+        len &= 0xFFFF;
+        if (len > avail) rt_error(5);      /* asked to save more than the array holds */
+        FILE *f = bfile_open(name, namelen, 1);
+        bfile_header(f, rs ? rs->defseg : 0, ((long)index * es) & 0xFFFF, len);
+        for (long i = 0; i < len; i++) fputc(arr_getbyte(a, index, i), f);
+        fclose(f);
+        return;
+    }
+    FILE *f = bfile_open(name, namelen, 0);
+    int fseg; long foff, flen;
+    bfile_read_header(f, &fseg, &foff, &flen);
+    if (flen > avail) { fclose(f); rt_error(5); }   /* like GET: the array is too small */
+    unsigned char *buf = (unsigned char *)malloc((size_t)flen + 8);
+    long n = (long)fread(buf, 1, (size_t)flen, f);
+    fclose(f);
+    for (long e = 0; e * es < n; e++) {
+        unsigned char b[8];
+        long take = n - e * es; if (take > es) take = es;
+        for (int k = 0; k < es; k++) b[k] = (unsigned char)(k < take ? buf[e * es + k] : arr_getbyte(a, index, e * es + k));
+        arr_set_raw(a, index + e, b);
+    }
+    free(buf);
 }
 
 /* used by the IDE to obtain program screen text for F4 when in text mode */

@@ -120,6 +120,10 @@ PALETTE USING pal&(0)
 - `LOADPAL` necesita un array LONG (como `PALETTE USING`): un elemento por color con el valor
   `65536 * azul + 256 * verde + rojo` (componentes 0-63).
 
+`BSAVE`/`BLOAD` guardan y cargan arrays (por ejemplo, sprites) con `VARPTR(array(i))`, y emulan la
+memoria de vídeo de SCREEN 13, de los modos EGA/VGA planares (un archivo por plano, con
+`OUT &H3C4`/`&H3C5`) y de los modos CGA y de texto.
+
 También se admiten `PEEK(&H417)` (estado de Mayús/Ctrl/Alt) y `PEEK(&H46C)` (ticks del reloj).
 La carpeta `examples` incluye `NAVES.BAS`, un juego completo que usa todo esto.
 
@@ -170,7 +174,8 @@ controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 - No implementados: `CHAIN`, `CALL ABSOLUTE`/`INTERRUPT`, `ON PLAY`/`ON COM`/`ON PEN`/`ON STRIG`,
   `ON KEY` (se acepta pero no se dispara), el comando `X` de `PLAY`/`DRAW` con `VARPTR$`, la vista
   dividida (*View > Split*) y la impresión. `LPRINT` se descarta.
-- `PEEK`/`POKE` solo funcionan sobre la memoria de vídeo y las zonas de la BIOS indicadas. `VARPTR` devuelve 0.
+- `PEEK`/`POKE` solo funcionan sobre la memoria de vídeo y las zonas de la BIOS indicadas. `VARPTR` y
+  `VARSEG` devuelven 0, salvo en la forma `BLOAD`/`BSAVE archivo$, VARPTR(array(i))`.
 - La rueda del ratón no está disponible (dos-like no la expone).
 - La música en segundo plano (`PLAY "MB..."`) se encola de forma aproximada.
 

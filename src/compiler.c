@@ -2707,9 +2707,35 @@ static void compile_statement(void) {
         }
         case KW_ENVIRON: { int si = emit(S_ENVIRON); ST(si)->e1 = parse_str_expr(); return; }
         case KW_BLOAD: case KW_BSAVE: {
+            /* BLOAD file$ [, offset]   BSAVE file$, offset, length
+               With offset written as VARPTR(array(i)) the data goes to / comes from the array (i1 = 1),
+               raw, whatever DEF SEG says. */
             int si = emit(kw == KW_BLOAD ? S_BLOAD : S_BSAVE);
             ST(si)->e1 = parse_str_expr();
-            if (acceptop(',')) { if (!isop(',')) ST(si)->e2 = parse_num_expr(); if (acceptop(',')) ST(si)->e3 = parse_num_expr(); }
+            if (acceptop(',')) {
+                if (!isop(',')) {
+                    int done = 0;
+                    if (iskw(KW_VARPTR) && peekn(1)->k == TK_OP && peekn(1)->kw == '(' && peekn(2)->k == TK_ID &&
+                        peekn(3)->k == TK_OP && peekn(3)->kw == '(') {
+                        int save = cc->pos;
+                        adv(); adv();
+                        char name[64]; snprintf(name, sizeof name, "%s", cur()->s); adv();
+                        int scope; Sym *sy = resolve_var(name, 1, 1, &scope);
+                        adv();   /* ( */
+                        if (!isop(')')) { stmt_addarg(si, parse_num_expr()); while (acceptop(',')) stmt_addarg(si, parse_num_expr()); }
+                        expectop(')');
+                        expectop(')');
+                        if (isop(',') || at_stmt_end()) {
+                            if (sy->t == T_STR || sy->t == T_UDT) cerr("Type mismatch");
+                            ST(si)->i1 = 1; ST(si)->i2 = scope; ST(si)->i3 = sy->idx;
+                            done = 1;
+                        } else { cc->pos = save; ST(si)->nargs = 0; }   /* VARPTR(...) inside a larger expression */
+                    }
+                    if (!done) ST(si)->e2 = parse_num_expr();
+                }
+                if (acceptop(',')) ST(si)->e3 = parse_num_expr();
+            }
+            if (kw == KW_BSAVE && (!ST(si)->e3 || (!ST(si)->e2 && !ST(si)->i1))) cerr("Expected: ,");
             return;
         }
         case KW_OPTION: {

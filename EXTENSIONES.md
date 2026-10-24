@@ -20,7 +20,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
 - [Hardware emulado](#hardware-emulado)
-  - [Memoria de vídeo (PEEK / POKE)](#memoria-de-vídeo-peek--poke)
+  - [Memoria de vídeo (PEEK / POKE)](#memoria-de-vídeo-peek--poke), incluidos los modos planares EGA/VGA
   - [Sincronización vertical (INP &H3DA, WAIT)](#sincronización-vertical-inp-h3da-wait)
   - [Paleta VGA (OUT / INP &H3C7-&H3C9)](#paleta-vga-out--inp-h3c7-h3c9)
   - [Teclado (INP &H60, PEEK &H417)](#teclado-inp-h60-peek-h417)
@@ -324,8 +324,10 @@ y los juegos nuevos funcionen igual.
 
 | Segmento (`DEF SEG =`) | Modo | Contenido |
 |---|---|---|
-| `&HA000` | SCREEN 13 | un byte por píxel; desplazamiento = `y * 320 + x` |
-| `&HB800` | SCREEN 0 | pares carácter/atributo; desplazamiento = `(fila * columnas + columna) * 2`; cada página ocupa 4096 bytes |
+| `&HA000` | SCREEN 13 | lineal, un byte por píxel; desplazamiento = `y * 320 + x` (64000 bytes) |
+| `&HA000` | SCREEN 7, 8, 9, 12 | planar EGA/VGA: 4 planos de bits (azul, verde, rojo, intensidad); cada byte son 8 píxeles seguidos de un plano; desplazamiento = `y * (ancho \ 8) + x \ 8` |
+| `&HB800` | SCREEN 1, 2 | CGA: líneas pares desde 0 y líneas impares desde `&H2000`, 80 bytes por línea (4 píxeles por byte en SCREEN 1, 8 en SCREEN 2) |
+| `&HB800` | SCREEN 0 | pares carácter/atributo; desplazamiento = `(fila * columnas + columna) * 2`; cada página ocupa 4096 bytes en 80×25 (2048 en 40×25) |
 
 ```basic
 SCREEN 13
@@ -334,6 +336,20 @@ POKE 100 * 320& + 160, 15        ' píxel blanco en (160, 100)
 c = PEEK(100 * 320& + 160)
 DEF SEG
 ```
+
+#### Modos planares (SCREEN 7, 8, 9, 12)
+
+Como en una tarjeta EGA/VGA, cada posición de memoria corresponde a 8 píxeles en cuatro planos, uno por
+bit del color. Qué planos se escriben y cuál se lee se elige con los registros de la tarjeta:
+
+| Puertos | Registro | Uso |
+|---|---|---|
+| `OUT &H3C4, 2: OUT &H3C5, m` | *map mask* del secuenciador | `POKE`/`BLOAD` escriben en los planos con bit a 1 en `m` (1 azul, 2 verde, 4 rojo, 8 intensidad); por defecto `15`, todos |
+| `OUT &H3CE, 4: OUT &H3CF, p` | *read map select* | `PEEK`/`BSAVE` leen el plano `p` (0-3); por defecto 0 |
+
+Cada plano ocupa `ancho * alto / 8` bytes: 8000 en SCREEN 7, 16000 en SCREEN 8, 28000 en SCREEN 9 y 38400
+en SCREEN 12. Las páginas siguen a la primera cada 8 KB (SCREEN 7), 16 KB (SCREEN 8) o 32 KB (SCREEN 9);
+el desplazamiento elige la página, no `SCREEN ,,apage`. Los registros vuelven a sus valores por defecto con cada `SCREEN`.
 
 ### Sincronización vertical (INP &H3DA, WAIT)
 
@@ -380,14 +396,92 @@ Con `DEF SEG = 0`, `PEEK(&H46C)` a `PEEK(&H46F)` dan el contador de ticks del re
 
 ### BLOAD / BSAVE
 
-Funcionan sobre la memoria de vídeo emulada (`DEF SEG = &HA000` en SCREEN 13, `&HB800` en SCREEN 0)
-con el formato de archivo de QBasic (cabecera de 7 bytes).
+```
+BSAVE archivo$, desplazamiento%, longitud%
+BLOAD archivo$[, desplazamiento%]
+BSAVE archivo$, VARPTR(array(índice)), longitud%
+BLOAD archivo$, VARPTR(array(índice))
+```
+
+Usan el formato de archivo de QBasic: un byte `&HFD` y tres palabras de 16 bits (*little-endian*) con el
+segmento, el desplazamiento y la longitud, seguidos de los datos. Así se pueden cargar los archivos de
+juegos y programas antiguos y guardar archivos que QBasic también entiende.
+
+En un PC moderno no hay segmentos, así que QBLike emula los dos casos útiles:
+
+**1. Arrays** (sprites, mapas, tablas…). Si el desplazamiento se escribe como `VARPTR(array(índice))`, los
+datos se guardan desde el array o se cargan en él tal cual, byte a byte y a partir de ese elemento, sin
+importar `DEF SEG` ni el segmento guardado en el archivo. Sirve para cualquier array numérico
+(INTEGER, LONG, SINGLE, DOUBLE, de una o varias dimensiones); los de cadenas y de tipos `TYPE` dan
+*Type mismatch*.
+
+- `BLOAD` da *Illegal function call* si los datos no caben en el array desde ese elemento (como `GET`),
+  y no modifica nada.
+- `BSAVE` da *Illegal function call* si se pide guardar más bytes de los que tiene el array.
+- La longitud se cuenta en bytes: 2 por INTEGER, 4 por LONG o SINGLE, 8 por DOUBLE. Para un sprite de
+  `GET`, es el tamaño de la imagen (por ejemplo, `4 + ancho * alto` en SCREEN 13).
+- Hay que escribir `VARPTR(...)` directamente como segundo argumento; si es parte de una expresión
+  (`VARPTR(a(0)) + 2`) o una variable, se trata como un desplazamiento normal.
+
+```basic
+SCREEN 13
+DIM nave%(129)                                 ' 16x16 en SCREEN 13: 4 + 256 bytes = 130 INTEGER
+GET (0, 0)-(15, 15), nave%
+BSAVE "NAVE.SPR", VARPTR(nave%(0)), 260        ' guarda el sprite
+
+DIM otra%(129)
+DEF SEG = VARSEG(otra%(0))                     ' forma clásica; en QBLike es opcional
+BLOAD "NAVE.SPR", VARPTR(otra%(0))             ' lo carga
+DEF SEG
+PUT (100, 100), otra%, MASK
+```
+
+Varios sprites seguidos en un mismo array se guardan o cargan igual, con el índice del primero y la suma
+de sus tamaños.
+
+**2. Memoria de vídeo.** Si no se usa `VARPTR`, el segmento es el de `DEF SEG` cuando apunta a la
+memoria de vídeo (`&HA000` o `&HB800`) y se indica un desplazamiento; si no, el guardado en el archivo.
+Los datos van a la pantalla según la [tabla de memoria de vídeo](#memoria-de-vídeo-peek--poke):
+
+- **SCREEN 13**, segmento `&HA000`: se copian a la pantalla; lo que pase de 64000 bytes se ignora.
+- **SCREEN 7, 8, 9, 12**, segmento `&HA000`: cada archivo es un plano de bits, y va a los planos
+  elegidos con `OUT &H3C4, 2: OUT &H3C5, m`. `BSAVE` guarda el plano elegido con `OUT &H3CE, 4: OUT &H3CF, p`.
+- **SCREEN 1, 2**, segmento `&HB800`: memoria CGA (16384 bytes, líneas pares e impares por separado).
+- **SCREEN 0**, segmento `&HB800`: pantalla de texto, pares carácter/atributo (4000 bytes en 80×25).
+
+Los archivos con otro segmento, o con un segmento de vídeo que no corresponde al modo actual, se
+ignoran sin error.
 
 ```basic
 SCREEN 13
 DEF SEG = &HA000
-BSAVE "pantalla.bin", 0, 64000
-BLOAD "pantalla.bin"
+BSAVE "PANTALLA.BIN", 0, 64000     ' &HFA00 también vale, aunque como INTEGER sea negativo
+DEF SEG
+BLOAD "PANTALLA.BIN"               ' segmento y desplazamiento del archivo
+```
+
+Una pantalla EGA de 16 colores guardada en cuatro archivos, uno por plano:
+
+```basic
+SCREEN 7
+DEF SEG = &HA000
+OUT &H3C4, 2: OUT &H3C5, 1: BLOAD archivo$ + ".AZU", 0    ' plano azul
+OUT &H3C4, 2: OUT &H3C5, 2: BLOAD archivo$ + ".VER", 0    ' verde
+OUT &H3C4, 2: OUT &H3C5, 4: BLOAD archivo$ + ".ROJ", 0    ' rojo
+OUT &H3C4, 2: OUT &H3C5, 8: BLOAD archivo$ + ".INT", 0    ' intensidad
+OUT &H3C4, 2: OUT &H3C5, 15
+DEF SEG
+```
+
+Y para guardarla:
+
+```basic
+DEF SEG = &HA000
+FOR p = 0 TO 3
+    OUT &H3CE, 4: OUT &H3CF, p
+    BSAVE archivo$ + "." + MID$("AZUVERROJINT", p * 3 + 1, 3), 0, 8000
+NEXT
+DEF SEG
 ```
 
 ---

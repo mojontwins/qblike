@@ -1972,12 +1972,18 @@ static int exec(Frame *f, int pc) {
                 break;
             }
             case S_BLOAD: case S_BSAVE: {
-                extern void gfx_bload(const char *name, int has, int off, int save, int len);
+                extern void gfx_bload(const char *name, int namelen, int has, long off, int save, long len);
+                extern void gfx_bload_array(const char *name, int namelen, Array *a, int index, int save, long len);
                 char *p; int l;
                 evs(s->e1, &p, &l);
-                int off = s->e2 ? (int)qb_round_even(evn(s->e2)) : 0;
-                int len = s->e3 ? (int)qb_round_even(evn(s->e3)) : 0;
-                gfx_bload(p, s->e2 != NULL, off, s->op == S_BSAVE, len);
+                long len = s->e3 ? (long)qb_round_even(evn(s->e3)) : 0;
+                if (s->i1 == 1) {
+                    Array *a; int idx = array_target(s, &a);
+                    gfx_bload_array(p, l, a, idx, s->op == S_BSAVE, len);
+                } else {
+                    long off = s->e2 ? (long)qb_round_even(evn(s->e2)) : 0;
+                    gfx_bload(p, l, s->e2 != NULL, off, s->op == S_BSAVE, len);
+                }
                 free(p);
                 pc++;
                 break;
