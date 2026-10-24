@@ -176,5 +176,5 @@ controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 
 ## Licencia
 
-dos-like es de Mattias Gustavsson (MIT o dominio público, a elegir).
-qblike tiene licencia MIT.
+dos-like es de Mattias Gustavsson (MIT o dominio público, a elegir). 
+QBLike tiene licencia MIT.
