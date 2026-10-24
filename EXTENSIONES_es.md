@@ -3,7 +3,8 @@
 Referencia de todo lo que QBLike añade a QBasic 1.1, tanto instrucciones nuevas como emulación del
 hardware de la época.
 
-Los programas que no usan las instrucciones nuevas funcionan igual que en QBasic. Como `MULTIKEY`, `MOUSE`, `CLIP`,
+Los programas que no usan las instrucciones nuevas funcionan igual que en QBasic. QBLike añade además el modo
+`SCREEN 3` (160×200, 16 colores, de PCjr/Tandy) y los colores por artefacto de la CGA compuesta en SCREEN 2. Como `MULTIKEY`, `MOUSE`, `CLIP`,
 `LOADBMP`, `LOADGIF` y `LOADPAL` son palabras reservadas en QBLike, no pueden usarse como nombres de variable.
 
 La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen en vez de dar
@@ -19,10 +20,12 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [LOADBMP](#loadbmp)
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
+  - [SCREEN 3 (PCjr / Tandy 1000)](#screen-3-pcjr--tandy-1000)
 - [Hardware emulado](#hardware-emulado)
   - [Memoria de vídeo (PEEK / POKE)](#memoria-de-vídeo-peek--poke), incluidos los modos planares EGA/VGA
   - [Sincronización vertical (INP &H3DA, WAIT)](#sincronización-vertical-inp-h3da-wait)
   - [Paleta VGA (OUT / INP &H3C7-&H3C9)](#paleta-vga-out--inp-h3c7-h3c9)
+  - [CGA compuesto: colores por artefacto (OUT &H3D8)](#cga-compuesto-colores-por-artefacto-out-h3d8)
   - [Teclado (INP &H60, PEEK &H417)](#teclado-inp-h60-peek-h417)
   - [Reloj de la BIOS (PEEK &H46C)](#reloj-de-la-bios-peek-h46c)
   - [BLOAD / BSAVE](#bload--bsave)
@@ -69,6 +72,7 @@ Lee el ratón y guarda el resultado en tres variables numéricas.
   | Modo | x | y |
   |---|---|---|
   | SCREEN 13, 1, 7 | 0 – 319 | 0 – 199 |
+  | SCREEN 3 | 0 – 159 | 0 – 199 |
   | SCREEN 2, 8 | 0 – 639 | 0 – 199 |
   | SCREEN 9, 10 | 0 – 639 | 0 – 349 |
   | SCREEN 11, 12 | 0 – 639 | 0 – 479 |
@@ -207,7 +211,7 @@ formato de píxeles que `GET` en el modo de pantalla actual, de modo que despué
 
 - La imagen debe poder representarse en el modo actual. Si no, da *Illegal function call*:
 
-  | Imagen | SCREEN 13 | SCREEN 7, 8, 9, 12 | SCREEN 1 | SCREEN 2, 11 |
+  | Imagen | SCREEN 13 | SCREEN 3, 7, 8, 9, 12 | SCREEN 1 | SCREEN 2, 11 |
   |---|---|---|---|---|
   | 2 colores | sí | sí | sí | sí |
   | 16 colores | sí | sí | no | no |
@@ -222,7 +226,7 @@ formato de píxeles que `GET` en el modo de pantalla actual, de modo que despué
 | Modo | Bytes |
 |---|---|
 | SCREEN 13 (256 colores) | `4 + ancho * alto` |
-| SCREEN 7, 8, 9, 12 (16 colores) | `4 + alto * 4 * ((ancho + 7) \ 8)` |
+| SCREEN 3, 7, 8, 9, 12 (16 colores) | `4 + alto * 4 * ((ancho + 7) \ 8)` |
 | SCREEN 1 (4 colores) | `4 + alto * ((ancho + 3) \ 4)` |
 | SCREEN 2, 11 (2 colores) | `4 + alto * ((ancho + 7) \ 8)` |
 
@@ -315,6 +319,37 @@ NEXT
 
 ---
 
+### SCREEN 3 (PCjr / Tandy 1000)
+
+```
+SCREEN 3
+```
+
+Modo de 160×200 con 16 colores de las IBM PCjr y Tandy 1000 (no existía en QBasic, sí en algunas
+versiones de GW-BASIC). Los píxeles son el doble de anchos que de altos, y el texto es de 20×25.
+
+- Colores: los 16 de la paleta IRGB de IBM, como en SCREEN 7. `COLOR primerplano, fondo` y
+  `PALETTE atributo, color` (color 0-15) funcionan igual que en SCREEN 7.
+- 2 páginas (`SCREEN 3, , 1, 0`, `PCOPY`).
+- `GET`/`PUT` usan el mismo formato de array que el resto de modos de 16 colores; `LOADBMP`/`LOADGIF`
+  aceptan imágenes de 2 o 16 colores.
+- `MOUSE` da `x` de 0 a 159.
+- Memoria de vídeo en `&HB800`, como en el hardware original: cada byte son dos píxeles de 4 bits
+  (el nibble alto es el de la izquierda) con su color directamente, sin artefactos. Las líneas pares
+  empiezan en el desplazamiento 0 y las impares en `&H2000` (8192), 80 bytes por línea. Una pantalla
+  completa ocupa 16384 bytes, y se guarda y carga con `BSAVE`/`BLOAD`.
+
+```basic
+SCREEN 3
+FOR i = 0 TO 15: LINE (i * 10, 0)-(i * 10 + 9, 120), i, BF: NEXT
+DEF SEG = &HB800
+POKE 8192 + 40 * 80 + 30, &H9A     ' línea 81: píxel 60 = color 9, píxel 61 = color 10
+BSAVE "TANDY.PIC", 0, 16384
+DEF SEG
+```
+
+---
+
 ## Hardware emulado
 
 Estos trucos ya existían en QBasic sobre un PC real. QBLike los emula para que los programas antiguos
@@ -326,7 +361,7 @@ y los juegos nuevos funcionen igual.
 |---|---|---|
 | `&HA000` | SCREEN 13 | lineal, un byte por píxel; desplazamiento = `y * 320 + x` (64000 bytes) |
 | `&HA000` | SCREEN 7, 8, 9, 12 | planar EGA/VGA: 4 planos de bits (azul, verde, rojo, intensidad); cada byte son 8 píxeles seguidos de un plano; desplazamiento = `y * (ancho \ 8) + x \ 8` |
-| `&HB800` | SCREEN 1, 2 | CGA: líneas pares desde 0 y líneas impares desde `&H2000`, 80 bytes por línea (4 píxeles por byte en SCREEN 1, 8 en SCREEN 2) |
+| `&HB800` | SCREEN 1, 2, 3 | CGA: líneas pares desde 0 y líneas impares desde `&H2000`, 80 bytes por línea (4 píxeles por byte en SCREEN 1, 8 en SCREEN 2, 2 en SCREEN 3) |
 | `&HB800` | SCREEN 0 | pares carácter/atributo; desplazamiento = `(fila * columnas + columna) * 2`; cada página ocupa 4096 bytes en 80×25 (2048 en 40×25) |
 
 ```basic
@@ -380,6 +415,58 @@ OUT &H3C9, 10: OUT &H3C9, 20: OUT &H3C9, 50     ' color 0 = azul oscuro
 ```
 
 Funciona en todos los modos gráficos; en los de 16 colores actúa sobre los colores 0-15.
+
+### CGA compuesto: colores por artefacto (OUT &H3D8)
+
+En una CGA conectada a un monitor o televisor compuesto NTSC, el modo de 640×200 en blanco y negro
+podía mostrar colores: si se activaba la señal de *color burst*, el monitor interpretaba los patrones de
+píxeles blancos y negros como colores. Cada grupo de 4 píxeles se veía como un único píxel ancho de uno
+de 16 colores, con una resolución efectiva de 160×200. QBLike lo emula:
+
+```basic
+SCREEN 2            ' 640x200, burst desactivado (registro = &H1E)
+OUT &H3D8, 26       ' &H1A: burst activado, colores por artefacto
+OUT &H3D8, 30       ' &H1E: vuelve al blanco y negro
+```
+
+El registro de modo de la CGA (`&H3D8`) se emula en SCREEN 2: con el bit 2 a 0 se activan los
+colores. Al cambiar de modo con `SCREEN` vuelve a su valor por defecto. Solo cambia la imagen que se
+muestra: `POINT`, `GET`, `PEEK` y `BSAVE` siguen viendo píxeles de 0 y 1. Cada grupo empieza en una
+columna múltiplo de 4, y el primer píxel es el bit de más peso:
+
+| Patrón | Valor | Color | RGB |
+|---|---|---|---|
+| 0000 | &H0 | negro | #000000 |
+| 0001 | &H1 | verde oscuro | #006E2D |
+| 0010 | &H2 | azul | #2D02FF |
+| 0011 | &H3 | azul claro | #008BFF |
+| 0100 | &H4 | rojo oscuro | #A9002D |
+| 0101 | &H5 | gris medio | #777677 |
+| 0110 | &H6 | magenta | #EC09FF |
+| 0111 | &H7 | violeta claro | #BB92FD |
+| 1000 | &H8 | marrón | #2D5A00 |
+| 1001 | &H9 | verde brillante | #00DC00 |
+| 1010 | &HA | gris claro | #767777 |
+| 1011 | &HB | aguamarina | #45F4B9 |
+| 1100 | &HC | naranja | #EA6502 |
+| 1101 | &HD | amarillo | #BCE500 |
+| 1110 | &HE | rosa | #FF80BC |
+| 1111 | &HF | blanco | #FFFFFF |
+
+Para pintar en color hay que dibujar los patrones. Por ejemplo, un rectángulo del color `c` (0-15):
+
+```basic
+SCREEN 2: OUT &H3D8, 26
+c = 12                                   ' naranja
+FOR x = 160 TO 319
+    IF c AND 2 ^ (3 - (x MOD 4)) THEN LINE (x, 50)-(x, 149), 1
+NEXT
+```
+
+Con `DEF SEG = &HB800` y `POKE` es aún más directo: cada byte son dos píxeles de color (nibble alto
+a la izquierda), así que `POKE desplazamiento, &HC9` pinta un píxel naranja y otro verde brillante.
+
+Sin burst, `OUT &H3D9, color` (0-15) cambia el color de los píxeles encendidos de SCREEN 2, como en la CGA.
 
 ### Teclado (INP &H60, PEEK &H417)
 
@@ -446,7 +533,7 @@ Los datos van a la pantalla según la [tabla de memoria de vídeo](#memoria-de-v
 - **SCREEN 13**, segmento `&HA000`: se copian a la pantalla; lo que pase de 64000 bytes se ignora.
 - **SCREEN 7, 8, 9, 12**, segmento `&HA000`: cada archivo es un plano de bits, y va a los planos
   elegidos con `OUT &H3C4, 2: OUT &H3C5, m`. `BSAVE` guarda el plano elegido con `OUT &H3CE, 4: OUT &H3CF, p`.
-- **SCREEN 1, 2**, segmento `&HB800`: memoria CGA (16384 bytes, líneas pares e impares por separado).
+- **SCREEN 1, 2, 3**, segmento `&HB800`: memoria CGA o PCjr/Tandy (16384 bytes, líneas pares e impares por separado).
 - **SCREEN 0**, segmento `&HB800`: pantalla de texto, pares carácter/atributo (4000 bytes en 80×25).
 
 Los archivos con otro segmento, o con un segmento de vídeo que no corresponde al modo actual, se

@@ -120,6 +120,7 @@ static const ModeInfo modes[] = {
     { 0, 0, 0, 80, 25, 9, 16, 16, 8, videomode_80x25_9x16 },
     { 1, 320, 200, 40, 25, 8, 8, 4, 1, videomode_320x200 },
     { 2, 640, 200, 80, 25, 8, 8, 2, 1, videomode_640x200 },
+    { 3, 160, 200, 20, 25, 8, 8, 16, 2, videomode_320x200 },   /* PCjr/Tandy 160x200x16, shown with doubled pixels */
     { 7, 320, 200, 40, 25, 8, 8, 16, 8, videomode_320x200 },
     { 8, 640, 200, 80, 25, 8, 8, 16, 4, videomode_640x200 },
     { 9, 640, 350, 80, 25, 8, 14, 16, 2, videomode_640x350 },
@@ -230,7 +231,23 @@ static void clear_text_rows(int page, int top, int bot) {
 static int vga_seq_idx = 0, vga_map_mask = 0x0F;   /* &H3C4/&H3C5, index 2 = map mask (planes written) */
 static int vga_gc_idx = 0, vga_read_map = 0;       /* &H3CE/&H3CF, index 4 = read map select (plane read) */
 
+/* emulated CGA registers */
+static int cga_mode_reg = 0x1E;     /* &H3D8 mode control; bit 2 = black & white (color burst off) */
+static int cga_color_reg = 0x0F;    /* &H3D9 color select; in SCREEN 2, bits 0-3 = foreground color */
+/* SCREEN 2 with the color burst on: composite NTSC artifact colors */
+static int composite_on(void) { return S.mode == 2 && !(cga_mode_reg & 4); }
+/* artifact color of each 4-pixel pattern (first pixel = bit 3), 0xRRGGBB */
+static const uint32_t cga_artifact[16] = {
+    0x000000, 0x006E2D, 0x2D02FF, 0x008BFF, 0xA9002D, 0x777677, 0xEC09FF, 0xBB92FD,
+    0x2D5A00, 0x00DC00, 0x767777, 0x45F4B9, 0xEA6502, 0xBCE500, 0xFF80BC, 0xFFFFFF
+};
+static int artifact_nibble(const uint8_t *px) {
+    return ((px[0] & 1) << 3) | ((px[1] & 1) << 2) | ((px[2] & 1) << 1) | (px[3] & 1);
+}
+
 static void setup_mode(int mode, int cols, int rows) {
+    cga_mode_reg = mode == 1 ? 0x0A : mode == 3 ? 0x0B : 0x1E;   /* BIOS values: burst off in SCREEN 2 */
+    cga_color_reg = mode == 2 ? 0x0F : 0x00;
     vga_seq_idx = 0; vga_map_mask = 0x0F; vga_gc_idx = 0; vga_read_map = 0;
     const ModeInfo *mi = NULL;
     for (int i = 0; modes[i].mode >= 0; i++) if (modes[i].mode == mode) mi = &modes[i];
@@ -330,6 +347,8 @@ void scr_width(int cols, int rows) {
         setup_mode(S.mode, 0, rows);
     } else if (S.mode == 13 || S.mode == 1 || S.mode == 7) {
         if (cols != 40) rt_error(5);
+    } else if (S.mode == 3) {
+        if (cols != 20) rt_error(5);
     } else {
         if (cols != 80) rt_error(5);
     }
@@ -605,6 +624,7 @@ static void overlay_gfx_cursor(uint8_t *pix, int w, int h) {
     int n = S.colors, attr = S.colors <= 16;
     int white = nearest_index(n, 63, 63, 63, attr), black = nearest_index(n, 0, 0, 0, attr);
     if (white == black) black = (white + 1) % n;
+    if (composite_on()) { white = 15; black = 0; }   /* artifact palette is loaded in 0-15 */
     /* in 640-wide modes with low height (SCREEN 2, 8) pixels are tall: halve rows */
     int ystep = (S.h <= 200 && S.w >= 640) ? 2 : 1;
     for (int yy = 0; yy < 16; yy += ystep)
@@ -656,10 +676,30 @@ static void present_program(void) {
         return;
     }
     set_vm(S.mi->vm);
+    uint8_t *dst = screenbuffer();
+    const uint8_t *src = S.pix[S.vpage];
+    int dw = S.w;
+    if (composite_on()) {
+        /* CGA composite: every 4 pixels of a line become one wide pixel of an artifact color */
+        for (int i = 0; i < 16; i++) {
+            uint32_t c = cga_artifact[i];
+            setpal(i, (int)((c >> 16) & 0xFF) >> 2, (int)((c >> 8) & 0xFF) >> 2, (int)(c & 0xFF) >> 2);
+        }
+        for (int y = 0; y < S.h; y++) {
+            const uint8_t *row = src + (long)y * S.w;
+            uint8_t *out = dst + (long)y * S.w;
+            for (int x = 0; x + 3 < S.w; x += 4) memset(out + x, artifact_nibble(row + x), 4);
+        }
+    } else {
     if (S.colors == 256) for (int i = 0; i < 256; i++) setpal(i, S.rgb[i][0], S.rgb[i][1], S.rgb[i][2]);
     else for (int i = 0; i < 16; i++) setpal(i, S.rgb[S.attrpal[i]][0], S.rgb[S.attrpal[i]][1], S.rgb[S.attrpal[i]][2]);
-    memcpy(screenbuffer(), S.pix[S.vpage], (size_t)(S.w * S.h));
-    if (g_mouse_cursor) overlay_gfx_cursor(screenbuffer(), S.w, S.h);
+        if (S.mode == 3) {
+            /* 160x200: each pixel is shown two pixels wide on a 320x200 screen */
+            dw = 320;
+            for (long i = 0; i < (long)S.w * S.h; i++) dst[2 * i] = dst[2 * i + 1] = src[i];
+        } else memcpy(dst, src, (size_t)(S.w * S.h));
+    }
+    if (g_mouse_cursor) overlay_gfx_cursor(dst, dw, S.h);
 }
 
 void scr_present(int force) {
@@ -1618,7 +1658,7 @@ void gfx_palette(int attr, long color, int has) {
     }
     /* EGA-style: color is 0..63 EGA index (mode 0/9) or 0..15 (mode 7/8) */
     int c = (int)color;
-    if (S.mode == 7 || S.mode == 8 || S.mode == 1 || S.mode == 2) c = ega_default[c & 15];
+    if (S.mode == 7 || S.mode == 8 || S.mode == 1 || S.mode == 2 || S.mode == 3) c = ega_default[c & 15];
     int dac = 16 + attr;
     uint8_t r, g, b;
     ega_rgb(c & 63, &r, &g, &b);
@@ -1668,8 +1708,8 @@ static uint8_t *cga_pixels(long o, int *ppb) {
     int bank = o >= 0x2000, r = (int)(o & 0x1FFF);
     int line = (r / 80) * 2 + bank;
     if (line >= S.h) return NULL;
-    *ppb = S.mode == 1 ? 4 : 8;
-    return S.pix[0] + (long)line * S.w + (r % 80) * *ppb;
+    *ppb = S.mode == 1 ? 4 : S.mode == 3 ? 2 : 8;
+    return S.pix[S.apage] + (long)line * S.w + (r % 80) * *ppb;
 }
 static long text_page_stride(void) { return ((long)S.cols * S.rows * 2 + 2047) & ~2047L; }
 static int is_planar_mode(void) { return S.mode >= 7 && S.mode <= 12; }
@@ -1691,12 +1731,13 @@ int gfx_peek(int seg, int off, int *ok) {
         for (int k = 0; k < 8; k++) if ((px[k] >> vga_read_map) & 1) v |= 0x80 >> k;
         return v;
     }
-    if (lin >= 0xB8000 && lin < 0xC0000 && (S.mode == 1 || S.mode == 2)) {
+    if (lin >= 0xB8000 && lin < 0xC0000 && (S.mode == 1 || S.mode == 2 || S.mode == 3)) {
         int ppb; uint8_t *px = cga_pixels(lin - 0xB8000, &ppb);
         *ok = 1;
         if (!px) return 0;
         int v = 0;
-        if (ppb == 4) for (int k = 0; k < 4; k++) v |= (px[k] & 3) << (6 - 2 * k);
+        if (ppb == 2) v = ((px[0] & 15) << 4) | (px[1] & 15);     /* PCjr/Tandy: high nibble = left pixel */
+        else if (ppb == 4) for (int k = 0; k < 4; k++) v |= (px[k] & 3) << (6 - 2 * k);
         else for (int k = 0; k < 8; k++) if (px[k] & 1) v |= 0x80 >> k;
         return v;
     }
@@ -1739,10 +1780,11 @@ void gfx_poke(int seg, int off, int v) {
         }
         return;
     }
-    if (lin >= 0xB8000 && lin < 0xC0000 && (S.mode == 1 || S.mode == 2)) {
+    if (lin >= 0xB8000 && lin < 0xC0000 && (S.mode == 1 || S.mode == 2 || S.mode == 3)) {
         int ppb; uint8_t *px = cga_pixels(lin - 0xB8000, &ppb);
         if (!px) return;
-        if (ppb == 4) for (int k = 0; k < 4; k++) px[k] = (uint8_t)((v >> (6 - 2 * k)) & 3);
+        if (ppb == 2) { px[0] = (uint8_t)((v >> 4) & 15); px[1] = (uint8_t)(v & 15); }
+        else if (ppb == 4) for (int k = 0; k < 4; k++) px[k] = (uint8_t)((v >> (6 - 2 * k)) & 3);
         else for (int k = 0; k < 8; k++) px[k] = (uint8_t)((v >> (7 - k)) & 1);
         return;
     }
@@ -1768,6 +1810,15 @@ void gfx_out(int port, int v) {
         if (S.colors <= 16 && idx < 16) dac = S.attrpal[idx] == idx ? idx : S.attrpal[idx];
         S.rgb[dac][S.dac_write_comp] = (uint8_t)(v & 63);
         if (++S.dac_write_comp == 3) { S.dac_write_comp = 0; S.dac_write_idx = (S.dac_write_idx + 1) & 255; }
+        return;
+    }
+    if (port == 0x3D8) { cga_mode_reg = v & 0xFF; return; }
+    if (port == 0x3D9) {
+        cga_color_reg = v & 0xFF;
+        if (S.mode == 2) {   /* foreground color of the 640x200 mode */
+            uint8_t r, g, b; ega_rgb(ega_default[v & 15], &r, &g, &b);
+            S.rgb[1][0] = r; S.rgb[1][1] = g; S.rgb[1][2] = b;
+        }
         return;
     }
     if (port == 0x3C4) { vga_seq_idx = v & 0x1F; return; }
@@ -1797,6 +1848,8 @@ static int vsync_status(void) {
 int gfx_inp(int port) {
     if (port == 0x3DA || port == 0x3BA) return vsync_status();
     if (port == 0x60) return kb_lastscan();
+    if (port == 0x3D8) return cga_mode_reg;
+    if (port == 0x3D9) return cga_color_reg;
     if (port == 0x3C4) return vga_seq_idx;
     if (port == 0x3C5) return vga_seq_idx == 2 ? vga_map_mask : 0;
     if (port == 0x3CE) return vga_gc_idx;
@@ -2017,6 +2070,11 @@ void scr_dump_ppm(const char *path) {
         fprintf(f, "P6\n%d %d\n255\n", S.w, S.h);
         for (int i = 0; i < S.w * S.h; i++) {
             int p = S.pix[S.vpage][i];
+            if (composite_on()) {
+                uint32_t c = cga_artifact[artifact_nibble(S.pix[S.vpage] + (i & ~3))];
+                fputc((c >> 16) & 0xFF, f); fputc((c >> 8) & 0xFF, f); fputc(c & 0xFF, f);
+                continue;
+            }
             int d = S.colors == 256 ? p : S.attrpal[p & 15];
             fputc(S.rgb[d][0] * 4, f); fputc(S.rgb[d][1] * 4, f); fputc(S.rgb[d][2] * 4, f);
         }
@@ -2128,6 +2186,7 @@ void sys_mouse(int *x, int *y, int *b) {
     *y = mousey();
     if (*x < 0 || *y < 0) { *x = -1; *y = -1; }
     else {
+        if (S.mode == 3) *x /= 2;   /* 160x200 is presented on a 320x200 screen */
         int maxx = S.mode == 0 ? S.cols - 1 : S.w - 1, maxy = S.mode == 0 ? S.rows - 1 : S.h - 1;
         if (*x > maxx || *y > maxy) { *x = -1; *y = -1; }
     }
