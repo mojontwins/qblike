@@ -173,5 +173,5 @@ Alt+Intro para pantalla completa, en Windows impedir que Alt/F10 activen el men�
 
 ## Licencia
 
-dos-like es de Mattias Gustavsson (MIT o dominio público, a elegir). El resto del código de QBLike se
-ha escrito para este proyecto y puedes publicarlo con la licencia que prefieras.
+dos-like es de Mattias Gustavsson (MIT o dominio público, a elegir). 
+QBLike tiene licencia MIT.
