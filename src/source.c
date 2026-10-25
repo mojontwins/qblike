@@ -90,9 +90,30 @@ void doc_from_lines(Doc *d, char **lines, int n) {
             part_init(p);
             snprintf(p->name, sizeof p->name, "%s", name);
             p->isfunc = c == 2;
-            /* attach preceding comment/DEF lines that came after the previous procedure */
+            /* attach preceding comment/DEF lines that came after the previous procedure; blank lines
+               are dropped, as in QBasic (otherwise the blank line written before each SUB on saving
+               would pile up at the top of the SUB on every load) */
             if (after_proc && pending_start >= 0) {
-                for (int k = pending_start; k < i; k++) part_insert(p, p->n, lines[k]);
+                for (int k = pending_start; k < i; k++) {
+                    const char *b = lines[k];
+                    while (*b == ' ' || *b == '\t') b++;
+                    if (*b) part_insert(p, p->n, lines[k]);
+                }
+            }
+            if (!after_proc) {
+                /* first procedure: the comment lines right above its header (no blank line in between)
+                   are its own, as they come back from saving; move them out of the module */
+                int k = main->n;
+                while (k > 0) {
+                    TokLine tl;
+                    lex_line(main->lines[k - 1], &tl);
+                    int is_comment = tl.n > 0 && tl.t[0].k == TK_REM;
+                    lex_free(&tl);
+                    if (!is_comment) break;
+                    k--;
+                }
+                for (int m = k; m < main->n; m++) part_insert(p, p->n, main->lines[m]);
+                while (main->n > k) part_delete(main, main->n - 1);
             }
             pending_start = -1;
             int j = i;
