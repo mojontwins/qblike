@@ -1636,6 +1636,13 @@ static int exec(Frame *f, int pc) {
                 pc++;
                 break;
             }
+            case S_FILL: {
+                extern void gfx_fill(double x, double y, int color, int hascolor, int step);
+                double x = evn(s->e1), y = evn(s->e2);
+                gfx_fill(x, y, s->e3 ? (int)qb_round_even(evn(s->e3)) : 0, s->e3 != NULL, s->i1);
+                pc++;
+                break;
+            }
             case S_PAINT: {
                 double x = evn(s->e1), y = evn(s->e2);
                 int p = 0, hp = 0, b = 0, hb = 0;

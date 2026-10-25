@@ -23,6 +23,7 @@ static const HelpEnt H[] = {
 { "CIRCLE", "CIRCLE [STEP] (x!,y!),radius![,[color%] [,[start!] [,[end!] [,aspect!]]]]", "Draws a circle, ellipse or arc. Start and end angles are in radians;\nnegative angles also draw a radius line.", "LINE PSET PAINT" },
 { "CLEAR", "CLEAR [,,stack&]", "Closes all files and resets all variables.", "ERASE" },
 { "CLIP", "CLIP x1%, y1%, x2%, y2%\nCLIP", "QBLike extension. Sets the clipping rectangle used by PUT (and by\nLOADBMP/LOADGIF ..., SCREEN), in absolute screen coordinates: the origin\nis not moved, unlike VIEW. CLIP alone, or SCREEN with a mode, resets it to\nthe whole screen.\n\nPUT never fails for being off-screen: only the part of the image inside\nthe rectangle is drawn, so sprites can leave the screen on any side.\n\n  CLIP 0, 20, 319, 199     ' keep the top 20 lines (score bar) intact\n  PUT (x%, y%), sprite%(0), MASK", "PUT VIEW" },
+{ "FILL", "FILL [STEP] (x!, y!)[, color%]", "QBLike extension. Fills with color% the area of pixels that have the same\ncolor as (x, y) and touch it horizontally or vertically, whatever colors\nsurround it (PAINT needs a single border color). Without color%, the\nforeground color is used. Coordinates follow WINDOW and VIEW, and the fill\nstays inside the VIEW viewport. If (x, y) already has color%, nothing\nhappens.\n\n  LINE (10, 10)-(60, 60), 4, B\n  FILL (30, 30), 14            ' interior of the box\n  FILL (20, 10), 2             ' recolor the box itself\n\nFILL is not a reserved word: a program with its own SUB, FUNCTION,\nvariable or array called FILL keeps using it.", "PAINT POINT" },
 { "CLNG", "CLNG(numeric-expression)", "Rounds to the nearest long integer.", "CINT" },
 { "CLOSE", "CLOSE [[#]filenumber%[,[#]filenumber%]...]", "Closes one or more open files. CLOSE alone closes all files.", "OPEN RESET" },
 { "CLS", "CLS [{0 | 1 | 2}]", "Clears the screen. 0 = whole screen, 1 = graphics viewport,\n2 = text viewport.", "VIEW VIEW PRINT" },
@@ -193,7 +194,7 @@ static const char *extra_topics[][2] = {
       "  Text screen:    <<PRINT>> <<PRINT USING>> <<INPUT>> <<LINE INPUT>> <<LOCATE>> <<COLOR>> <<CLS>>\n"
       "  Graphics:       <<SCREEN>> <<PSET>> <<LINE>> <<CIRCLE>> <<PAINT>> <<DRAW>> <<GET>> <<PUT>>\n"
       "                  <<PALETTE>> <<VIEW>> <<WINDOW>> <<PCOPY>> <<POINT>>\n"
-      "                  <<LOADBMP>> <<LOADGIF>> <<LOADPAL>> <<CLIP>>\n"
+      "                  <<LOADBMP>> <<LOADGIF>> <<LOADPAL>> <<CLIP>> <<FILL>>\n"
       "  Keyboard/mouse: <<INKEY$>> <<MULTIKEY>> <<MOUSE>> <<INPUT$>> <<SLEEP>>\n"
       "  Sound:          <<BEEP>> <<SOUND>> <<PLAY>>\n"
       "  Strings:        <<LEFT$>> <<MID$>> <<INSTR>> <<LEN>> <<STR$>> <<VAL>> <<CHR$>> <<ASC>>\n"
@@ -291,7 +292,8 @@ static const char *extra_topics[][2] = {
       "  * Transparent sprites: PUT (x, y), sprite(0), MASK   (see <<PUT>>)\n"
       "  * Clipped sprites: PUT never fails off-screen; area set with <<CLIP>>\n"
       "  * Page flipping: SCREEN 7, 0, 1, 0 ... <<PCOPY>> 1, 0\n"
-      "  * Loading images: <<LOADBMP>>, <<LOADGIF>> and <<LOADPAL>>\n\n"
+      "  * Loading images: <<LOADBMP>>, <<LOADGIF>> and <<LOADPAL>>\n"
+      "  * Flood fill by color, any border: <<FILL>> (x, y), color\n\n"
       "  See also: <<INP>> <<OUT>> <<DEF SEG>> <<GET>>\n" },
     { "Menus",
       "  Menus\n\n"

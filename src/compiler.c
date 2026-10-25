@@ -2142,6 +2142,24 @@ static void compile_assignment(void) {
     ST(si)->e2 = rhs;
 }
 
+/* FILL (x, y), c  versus an array element assignment  fill(x, y) = c */
+static int is_fill_statement(void) {
+    Tok *n = peekn(1);
+    if (n->k == TK_KW && n->kw == KW_STEP) return 1;
+    if (!(n->k == TK_OP && n->kw == '(')) return 0;
+    int depth = 0;
+    for (int k = 1; ; k++) {
+        Tok *q = peekn(k);
+        if (q->k == TK_EOL || q->k == TK_REM) return 0;
+        if (q->k == TK_OP && q->kw == '(') depth++;
+        else if (q->k == TK_OP && q->kw == ')' && --depth == 0) {
+            Tok *a = peekn(k + 1);
+            return (a->k == TK_OP && (a->kw == ',' || a->kw == ':')) || a->k == TK_EOL || a->k == TK_REM ||
+                   (a->k == TK_KW && a->kw == KW_ELSE);
+        }
+    }
+}
+
 static void compile_statement(void) {
     Tok *t = cur();
     if (t->k == TK_ID) {
@@ -2151,6 +2169,17 @@ static void compile_statement(void) {
         if (pi >= 0 && !cc->P->procs[pi].isfunc && !(peekn(1)->k == TK_OP && peekn(1)->kw == '=')) {
             adv();
             compile_call_args_stmt(pi, 0);
+            return;
+        }
+        /* FILL [STEP] (x, y)[, color]: QBLike extension. Not a reserved word, so programs with their
+           own SUB/FUNCTION, variable or array called FILL keep working. */
+        if (pi < 0 && !strcmp(base, "FILL") && !strpbrk(t->s, "%&!#$") && is_fill_statement()) {
+            adv();
+            int si = emit(S_FILL);
+            Expr *x, *y;
+            ST(si)->i1 = parse_coord(&x, &y);
+            ST(si)->e1 = x; ST(si)->e2 = y;
+            if (acceptop(',')) ST(si)->e3 = parse_num_expr();
             return;
         }
         compile_assignment();

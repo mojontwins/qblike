@@ -17,6 +17,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [MOUSE](#mouse)
   - [PUT ... MASK](#put--mask)
   - [CLIP (y PUT con recorte)](#clip)
+  - [FILL](#fill)
   - [LOADBMP](#loadbmp)
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
@@ -183,6 +184,37 @@ FOR x = -16 TO 320                         ' entra por la izquierda y sale por l
     LINE (0, 20)-(319, 199), 0, BF
     PUT (x, 10), sprite%(0), MASK          ' la parte superior queda oculta tras la barra
 NEXT
+```
+
+---
+
+### FILL
+
+```
+FILL [STEP](x!, y!)[, color%]
+```
+
+Rellena con `color%` la zona de píxeles que tienen el mismo color que el punto `(x, y)` y que se tocan con él
+en horizontal o en vertical, sea cual sea el color de lo que la rodea. A diferencia de `PAINT`, que se detiene
+en un único color de borde, `FILL` sirve para zonas delimitadas por líneas de varios colores y para recolorear
+una figura entera (por ejemplo, su contorno).
+
+- Sin `color%` se usa el color de primer plano.
+- Las coordenadas respetan `WINDOW` y `VIEW` (y `STEP`, relativo al último punto), y el relleno no sale de la
+  ventana gráfica de `VIEW`.
+- Si `(x, y)` ya es de `color%`, o queda fuera de la ventana gráfica, no hace nada.
+- No usa recursión ni tiene límite de tamaño: rellenar la pantalla entera es inmediato.
+- Hace falta un modo gráfico; en `SCREEN 0` da *Illegal function call*.
+
+`FILL` **no es palabra reservada**: los programas que tienen su propia `SUB`, `FUNCTION`, variable o array
+llamados `FILL` siguen funcionando igual.
+
+```basic
+SCREEN 13
+LINE (10, 10)-(60, 10), 4: LINE (60, 10)-(60, 60), 9   ' borde de varios colores
+LINE (60, 60)-(10, 60), 4: LINE (10, 60)-(10, 10), 2
+FILL (30, 30), 14                                       ' el interior
+FILL (20, 10), 12                                       ' solo la línea superior (color 4)
 ```
 
 ---

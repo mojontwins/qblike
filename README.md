@@ -102,6 +102,7 @@ MOUSE x, y, b                              ' NEW: mouse position and buttons
 MOUSE ON                                   ' NEW: shows the mouse cursor (MOUSE OFF hides it; hidden by default)
 PUT (x, y), sprite(0), MASK                ' NEW: PUT skipping color 0
 CLIP 0, 20, 319, 199                       ' NEW: clipping area for PUT
+FILL (x, y), c                             ' NEW: fill the area of the color at (x, y)
 ```
 
 In QBLike, `PUT` clips the image instead of raising an error when it goes off the screen (or the `CLIP` area).
@@ -313,6 +314,7 @@ MOUSE x, y, b                              ' NUEVO: posición del ratón y boton
 MOUSE ON                                   ' NUEVO: muestra el cursor del ratón (MOUSE OFF lo oculta; oculto por defecto)
 PUT (x, y), sprite(0), MASK                ' NUEVO: PUT saltándose el color 0
 CLIP 0, 20, 319, 199                       ' NUEVO: área de recorte para PUT
+FILL (x, y), c                             ' NUEVO: rellena la zona del color que hay en (x, y)
 ```
 
 En QBLike, `PUT` recorta la imagen en lugar de dar error cuando se sale de la pantalla (o del área de `CLIP`).

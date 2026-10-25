@@ -18,6 +18,7 @@ The only behavior difference from QBasic is that `PUT` clips the image instead o
   - [MOUSE](#mouse)
   - [PUT ... MASK](#put--mask)
   - [CLIP (and clipped PUT)](#clip)
+  - [FILL](#fill)
   - [LOADBMP](#loadbmp)
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
@@ -183,6 +184,37 @@ FOR x = -16 TO 320                         ' enters on the left and leaves on th
     LINE (0, 20)-(319, 199), 0, BF
     PUT (x, 10), sprite%(0), MASK          ' the top part stays hidden behind the bar
 NEXT
+```
+
+---
+
+### FILL
+
+```
+FILL [STEP](x!, y!)[, color%]
+```
+
+Fills with `color%` the area of pixels that have the same color as the point `(x, y)` and touch it
+horizontally or vertically, whatever the color around it. Unlike `PAINT`, which stops at a single border color,
+`FILL` works for areas bounded by lines of several colors and to recolor a whole shape (its outline, for
+example).
+
+- Without `color%` the foreground color is used.
+- The coordinates follow `WINDOW` and `VIEW` (and `STEP`, relative to the last point), and the fill stays
+  inside the `VIEW` viewport.
+- If `(x, y)` already has `color%`, or is outside the viewport, nothing happens.
+- It uses no recursion and has no size limit: filling the whole screen is instant.
+- A graphics mode is required; in `SCREEN 0` it raises *Illegal function call*.
+
+`FILL` **is not a reserved word**: programs that have their own `SUB`, `FUNCTION`, variable or array called
+`FILL` keep working the same.
+
+```basic
+SCREEN 13
+LINE (10, 10)-(60, 10), 4: LINE (60, 10)-(60, 60), 9   ' border of several colors
+LINE (60, 60)-(10, 60), 4: LINE (10, 60)-(10, 10), 2
+FILL (30, 30), 14                                       ' the interior
+FILL (20, 10), 12                                       ' only the top line (color 4)
 ```
 
 ---

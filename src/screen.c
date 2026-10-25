@@ -1129,18 +1129,23 @@ void gfx_pset(double x, double y, int color, int hascolor, int step, int preset)
     S.lastx = x; S.lasty = y;
 }
 
+/* LINE rasterization compatible with GW-BASIC/QBasic (as reproduced by PC-BASIC): the line is drawn
+   from the upper end, Bresenham with the error term starting at half the major axis. Being pixel-exact
+   matters: programs fill areas by testing POINT along these boundaries. */
 static void raw_line(int x1, int y1, int x2, int y2, int c, int style, int *bit) {
-    int dx = abs(x2 - x1), dy = -abs(y2 - y1);
-    int sx = x1 < x2 ? 1 : -1, sy = y1 < y2 ? 1 : -1;
-    int err = dx + dy;
-    for (;;) {
+    if (y2 <= y1) { int t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+    int dx = abs(x2 - x1), dy = abs(y2 - y1);
+    int steep = dy > dx;
+    if (steep) { int t = x1; x1 = y1; y1 = t; t = x2; x2 = y2; y2 = t; t = dx; dx = dy; dy = t; }
+    int sx = x2 > x1 ? 1 : -1, sy = y2 > y1 ? 1 : -1;
+    int err = dx / 2, y = y1;
+    for (int x = x1; ; x += sx) {
         int on = 1;
         if (style != 0xFFFF) { on = (style >> (15 - (*bit & 15))) & 1; (*bit)++; }
-        if (on) plot(x1, y1, c);
-        if (x1 == x2 && y1 == y2) break;
-        int e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x1 += sx; }
-        if (e2 <= dx) { err += dx; y1 += sy; }
+        if (on) { if (steep) plot(y, x, c); else plot(x, y, c); }
+        if (x == x2) break;
+        err -= dy;
+        if (err < 0) { y += sy; err += dx; }
     }
 }
 
@@ -1268,6 +1273,50 @@ static int tile_color(const char *tile, int tl, int x, int y) {
     }
     unsigned char b = (unsigned char)tile[y % tl];
     return (b >> (7 - (x % 8))) & 1;
+}
+
+/* FILL (x, y), c: QBLike extension. Recolors the area of pixels that have the same color as (x, y)
+   and touch it horizontally or vertically, whatever its border is (PAINT needs a border color).
+   Clipped to the VIEW viewport. Scanline flood fill: no recursion, any area size. */
+void gfx_fill(double x, double y, int color, int hascolor, int step) {
+    need_gfx();
+    if (step) { x += S.lastx; y += S.lasty; }
+    S.lastx = x; S.lasty = y;
+    double px, py;
+    map_xy(x, y, &px, &py);
+    int sx = iround(px), sy = iround(py);
+    if (sx < S.vx1 || sx > S.vx2 || sy < S.vy1 || sy > S.vy2) return;
+    int fc = hascolor ? clamp_color(color) : S.fg;
+    uint8_t *pix = S.pix[S.apage];
+    int W = S.w;
+    int tc = pix[sy * W + sx];
+    if (tc == fc) return;
+    int cap = 4096, n = 0;
+    int *stack = (int *)qb_alloc(sizeof(int) * (size_t)cap);
+    stack[n++] = sy * W + sx;
+    while (n) {
+        int p = stack[--n];
+        int yy = p / W, xx = p % W;
+        if (pix[p] != tc) continue;
+        int l = xx, r = xx;
+        while (l > S.vx1 && pix[yy * W + l - 1] == tc) l--;
+        while (r < S.vx2 && pix[yy * W + r + 1] == tc) r++;
+        memset(pix + yy * W + l, fc, (size_t)(r - l + 1));
+        for (int d = -1; d <= 1; d += 2) {          /* seed each run of target color above and below */
+            int ny = yy + d;
+            if (ny < S.vy1 || ny > S.vy2) continue;
+            int inrun = 0;
+            for (int i = l; i <= r; i++) {
+                int match = pix[ny * W + i] == tc;
+                if (match && !inrun) {
+                    if (n == cap) { cap *= 2; stack = (int *)qb_realloc(stack, sizeof(int) * (size_t)cap); }
+                    stack[n++] = ny * W + i;
+                }
+                inrun = match;
+            }
+        }
+    }
+    free(stack);
 }
 
 void gfx_paint(double x, double y, int paint, int border, int haspaint, int hasborder, int step,

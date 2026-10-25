@@ -309,6 +309,24 @@ static int tokens_equal(TokLine *a, TokLine *b) {
 
 /* Reformat a line like the QBasic editor: keywords upper case, consistent identifier case,
    spaces around operators. Returns 1 if out differs. */
+/* FILL is a QBLike statement but not a reserved word: token i of tl is that statement when it starts
+   a statement, is followed by "(" or STEP, and the program has no SUB/FUNCTION called FILL */
+static int fill_stmt_at(TokLine *tl, int i) {
+    Tok *t = &tl->t[i];
+    if (t->k != TK_ID || qb_stricmp(t->s, "FILL") != 0) return 0;
+    if (i > 0) {
+        Tok *p = &tl->t[i - 1];
+        int ok = (p->k == TK_OP && p->kw == ':') || (p->k == TK_KW && (p->kw == KW_THEN || p->kw == KW_ELSE)) ||
+                 (i == 1 && p->k == TK_NUM);
+        if (!ok) return 0;
+    }
+    if (i + 1 >= tl->n) return 0;
+    Tok *n = &tl->t[i + 1];
+    if (!((n->k == TK_OP && n->kw == '(') || (n->k == TK_KW && n->kw == KW_STEP))) return 0;
+    for (int pi = 1; pi < doc.nparts; pi++) if (qb_stricmp(doc.parts[pi].name, "FILL") == 0) return 0;
+    return 1;
+}
+
 static int format_line(const char *in, char *out, int outsz, int update_case) {
     TokLine tl;
     lex_line(in, &tl);
@@ -339,6 +357,7 @@ static int format_line(const char *in, char *out, int outsz, int update_case) {
             }
             case TK_ID: {
                 char base[64], sfx;
+                if (fill_stmt_at(&tl, i)) { strcpy(txt, "FILL"); cls = PT_KW; break; }
                 if (firstkw == KW_DEFINT || firstkw == KW_DEFLNG || firstkw == KW_DEFSNG || firstkw == KW_DEFDBL || firstkw == KW_DEFSTR) {
                     /* letter ranges of DEFtype are not variable names: upper case, kept out of the case dictionary */
                     snprintf(txt, sizeof txt, "%s", t->s);
@@ -983,6 +1002,7 @@ static void syntax_colors(const char *s, unsigned char *out) {
             case TK_DATA: c = C_STR; break;
             case TK_ID:
                 if (i == 0 && tl.n > 1 && tl.t[1].k == TK_OP && tl.t[1].kw == ':') c = C_LABEL;
+                else if (fill_stmt_at(&tl, i)) c = C_KW;
                 break;
         }
         if (c < 0) continue;
