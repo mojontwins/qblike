@@ -2900,7 +2900,9 @@ static void compile_line(const char *text) {
     } else if (t->k == TK_ID && peekn(1)->k == TK_OP && peekn(1)->kw == ':' ) {
         char base[48];
         int st = split_name(t->s, base, sizeof base);
-        if (st == T_NONE && find_proc(base) < 0) {
+        /* "name:" at the start of a line is always a label, as in QBasic, even when a SUB has the
+           same name (labels and procedures are separate namespaces) */
+        if (st == T_NONE) {
             define_label(t->s, t->col);
             adv();
             adv();

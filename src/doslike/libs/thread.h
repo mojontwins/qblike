@@ -704,8 +704,12 @@ thread_ptr_t thread_create( int (*thread_proc)( void* ), void* user_data, int st
     #elif defined( __linux__ ) || defined( __APPLE__ ) || defined( __ANDROID__ )
 
         pthread_t thread;
-        if( 0 != pthread_create( &thread, NULL, ( void* (*)( void * ) ) thread_proc, user_data ) )
-            return NULL;
+        pthread_attr_t attr; /* QBLike: honor stack_size on POSIX too */
+        pthread_attr_init( &attr );
+        if( stack_size > 0 ) pthread_attr_setstacksize( &attr, (size_t) stack_size );
+        int res = pthread_create( &thread, &attr, ( void* (*)( void * ) ) thread_proc, user_data );
+        pthread_attr_destroy( &attr );
+        if( 0 != res ) return NULL;
 
         return (thread_ptr_t) thread;
 

@@ -467,7 +467,7 @@ static Frame *make_proc_frame(int pi, Expr **args, int nargs) {
 static void run_proc(int pi, Expr **args, int nargs) {
     Program *P = rs->prog;
     Proc *p = &P->procs[pi];
-    if (depth > 2000) rt_error(7);
+    if (depth > 2000) rt_error(28);   /* Out of stack space */
     Frame *f = make_proc_frame(pi, args, nargs);
     f->parent = rs->cur;
     Frame *saved = rs->cur;
@@ -482,7 +482,7 @@ static double call_function(Expr *e) {
     Program *P = rs->prog;
     int pi = e->idx;
     Proc *p = &P->procs[pi];
-    if (depth > 2000) rt_error(7);
+    if (depth > 2000) rt_error(28);   /* Out of stack space */
     Frame *f = make_proc_frame(pi, e->args, e->nargs);
     f->parent = rs->cur;
     Frame *saved = rs->cur;
@@ -1222,7 +1222,7 @@ static void check_events(void) {
 static void gosub_push(Frame *f, int ret) {
     if (f->ngosub >= f->capgosub) {
         f->capgosub = f->capgosub ? f->capgosub * 2 : 16;
-        if (f->capgosub > 100000) rt_error(7);
+        if (f->capgosub > 100000) rt_error(28);
         f->gosub = (int *)qb_realloc(f->gosub, sizeof(int) * (size_t)f->capgosub);
     }
     f->gosub[f->ngosub++] = ret;

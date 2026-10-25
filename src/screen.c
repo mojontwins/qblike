@@ -969,6 +969,8 @@ void kb_unstash(int restore) {
     break_flag = 0;
 }
 int kb_lastscan(void) { return last_scan; }
+/* left Alt held on its own (the IDE highlights the menu shortcuts meanwhile) */
+int kb_alt_held(void) { return m_alt() && !m_ctrl(); }
 int kb_break_pressed(void) { int b = break_flag; break_flag = 0; return b; }
 void kb_push_ide_key(int code) { kbq_push(code); }
 

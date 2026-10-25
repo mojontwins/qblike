@@ -99,6 +99,25 @@ int main(int argc, char *argv[]) {
         else if (str_ieq(a, "-w") || str_ieq(a, "--window")) continue;
         else if (a[0] != '-' || a[1] == 0) file = a;
     }
+    /* hidden test aid: qblike --beautify file.bas  prints the formatted program */
+    if (argc >= 3 && !strcmp(argv[1], "--beautify")) {
+        extern char **qb_beautify(char **lines, int n, int base, int indent, int (*fmt)(const char *, char *, int), int *outn);
+        extern int ide_format_text(const char *in, char *out, int outsz);
+        FILE *f = fopen(argv[2], "rb");
+        if (!f) return 2;
+        char **lines = NULL; int n = 0, cap = 0; char buf[4096];
+        while (fgets(buf, sizeof buf, f)) {
+            size_t l = strlen(buf);
+            while (l && (buf[l - 1] == '\n' || buf[l - 1] == '\r')) buf[--l] = 0;
+            if (n == cap) { cap = cap ? cap * 2 : 256; lines = (char **)realloc(lines, sizeof(char *) * (size_t)cap); }
+            lines[n++] = qb_strdup(buf);
+        }
+        fclose(f);
+        int on = 0;
+        char **out = qb_beautify(lines, n, 0, argc >= 4 ? atoi(argv[3]) : 4, ide_format_text, &on);
+        for (int i = 0; i < on; i++) printf("%s\n", out[i]);
+        return 0;
+    }
     if (getenv("QBLIKE_TEST")) g_headless_test = 1;
     scr_init();
     snd_init();

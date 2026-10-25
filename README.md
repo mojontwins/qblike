@@ -24,7 +24,7 @@ documentation and from the observable behavior of QBasic.
   automatic code formatting when leaving a line, syntax checking, debugger (F8/F10/F9),
   F1 help and "Press any key to continue".
 - **Modern editor**: Shift selection, Ctrl+C/X/V with the system clipboard, Ctrl+Z/Y,
-  word movement with Ctrl+arrows, mouse and syntax highlighting.
+  word movement with Ctrl+arrows, mouse, syntax highlighting and a code formatter (Edit > Format Code).
 
 ### Usage
 
@@ -50,14 +50,16 @@ case-insensitively, and DOS-style paths are accepted.
 | Ctrl + ← / → | previous / next word |
 | Ctrl + Home / End | beginning / end |
 | Ctrl+A | select all |
-| Ctrl+C, Ctrl+X, Ctrl+V | copy, cut, paste (also Ctrl+Ins, Shift+Del, Shift+Ins) |
+| Ctrl+C, Ctrl+X, Ctrl+V | copy, cut, paste; without a selection, the whole line (also Ctrl+Ins, Shift+Del, Shift+Ins) |
 | Ctrl+Z, Ctrl+Y | undo, redo |
 | Ctrl+Backspace, Ctrl+Del | delete word |
 | Tab / Shift+Tab | indent / unindent (also blocks) |
+| ← at a tab stop in the indentation | moves back a whole tab |
+| Ctrl+Shift+F | format code: the selection, or the whole module/SUB/FUNCTION shown |
 | Ctrl+S, Ctrl+O, Ctrl+N | save, open, new |
 | Ctrl+F, Ctrl+H, F3 | find, replace, find next |
 | Ctrl+G | go to line |
-| Alt (press and release) or Alt+letter | menus |
+| Alt (press and release) or Alt+letter | menus (holding Alt shows the shortcut letters) |
 
 | Running and debugging | |
 |---|---|
@@ -69,7 +71,7 @@ case-insensitively, and DOS-style paths are accepted.
 | F4 | view the output screen |
 | F6 | switch to/from the Immediate window |
 | F2 | list of SUBs and FUNCTIONs |
-| Ctrl+Break (Ctrl+Scroll Lock) | stop the program |
+| Ctrl+Break or Ctrl+Alt+Esc | stop the program at the current statement (F5 continues) |
 | F1 / Shift+F1 | help on the word at the cursor / using help |
 
 ### Graphics and sound
@@ -137,10 +139,27 @@ The `examples` folder includes `NAVES.BAS`, a complete game that uses all of thi
 
 ### Options
 
-In **Options**: colors, scroll bars, syntax highlighting, 50-line screen, CRT effect (dos-like curvature
-and scanlines, or a sharp 4:3 picture), syntax checking and **speed** (maximum or roughly a 386, 486 or
+In **Options**: colors, scroll bars, tab size (4 by default), syntax highlighting, 50-line screen, CRT
+effect (dos-like curvature and scanlines, or a sharp 4:3 picture), syntax checking and **speed** (maximum or roughly a 386, 486 or
 Pentium, useful for old games with delay loops). Options are saved in `~/.qblike.ini` (Linux) or
 `%APPDATA%\qblike.ini` (Windows).
+
+**Edit > Format Code** (Ctrl+Shift+F) asks for confirmation and then reformats the selected lines, or the
+whole module/SUB/FUNCTION shown: statements joined with `:` go on separate lines, single-line `IF`s with
+several statements become block `IF`s, and blocks are re-indented by the tab size. Strings, comments, `DATA`,
+labels and line numbers are kept, and Ctrl+Z undoes it:
+
+```basic
+b%=1:INPUT a%                              b% = 1
+IF a%=7 THEN PRINT "HOLA": a%=9: b%=0      INPUT a%
+                                    ->     IF a% = 7 THEN
+                                               PRINT "HOLA"
+                                               a% = 9
+                                               b% = 0
+                                           END IF
+```
+
+In fullscreen, the mouse pointer can't leave the picture, so it doesn't get lost in the black border.
 
 If the window is closed with unsaved changes, a `NAME.RECOVER.BAS` copy is created.
 
@@ -168,12 +187,13 @@ No build system is needed: it compiles with a single compiler command.
 | `src/help.c` | built-in help |
 | `src/clip.c` | system clipboard |
 | `src/image.c` | BMP and GIF loading (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
+| `src/beautify.c` | code formatter (Edit > Format Code) |
 | `src/doslike/` | dos-like (with a few small changes, below) |
 
 Changes to dos-like: `setcrtmode()` to turn the CRT effect on or off at run time, Alt+Enter for
-fullscreen, mouse position also without CRT and outside the window, on Windows preventing Alt/F10 from
-activating the window's system menu (which blocked the keyboard), and handling `SIGTERM`/Ctrl+C on Linux
-(`SDL_QUIT`). It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
+fullscreen, mouse position also without CRT and outside the window, pointer kept inside the picture in fullscreen, on Windows preventing Alt/F10 from
+activating the window's system menu (which blocked the keyboard), handling `SIGTERM`/Ctrl+C on Linux
+(`SDL_QUIT`), and a 64 MB stack for the program thread (deep SUB/FUNCTION recursion). It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
 (QBLike draws its own mouse cursor, like the DOS driver: an arrow in graphics modes, an inverted block in
 text mode).
 
@@ -215,7 +235,7 @@ de la documentación del lenguaje y del comportamiento observable de QBasic.
   formato automático del código al cambiar de línea, comprobación de sintaxis, depurador (F8/F10/F9),
   ayuda con F1 y "Press any key to continue".
 - **Editor moderno**: selección con Shift, Ctrl+C/X/V con el portapapeles del sistema, Ctrl+Z/Y,
-  movimiento por palabras con Ctrl+flechas, ratón y resaltado de sintaxis.
+  movimiento por palabras con Ctrl+flechas, ratón, resaltado de sintaxis y formateador de código (Edit > Format Code).
 
 ### Uso
 
@@ -241,14 +261,16 @@ detecta al abrir y se conserva al guardar. En Linux, los nombres de archivo de l
 | Ctrl + ← / → | palabra anterior / siguiente |
 | Ctrl + Inicio / Fin | principio / final |
 | Ctrl+A | seleccionar todo |
-| Ctrl+C, Ctrl+X, Ctrl+V | copiar, cortar, pegar (también Ctrl+Ins, Shift+Supr, Shift+Ins) |
+| Ctrl+C, Ctrl+X, Ctrl+V | copiar, cortar, pegar; sin selección, la línea entera (también Ctrl+Ins, Shift+Supr, Shift+Ins) |
 | Ctrl+Z, Ctrl+Y | deshacer, rehacer |
 | Ctrl+Retroceso, Ctrl+Supr | borrar palabra |
 | Tab / Shift+Tab | indentar / desindentar (también bloques) |
+| ← en una tabulación de la sangría | retrocede la tabulación entera |
+| Ctrl+Shift+F | formatear código: la selección, o el módulo/SUB/FUNCTION visible entero |
 | Ctrl+S, Ctrl+O, Ctrl+N | guardar, abrir, nuevo |
 | Ctrl+F, Ctrl+H, F3 | buscar, reemplazar, buscar siguiente |
 | Ctrl+G | ir a línea |
-| Alt (pulsar y soltar) o Alt+letra | menús |
+| Alt (pulsar y soltar) o Alt+letra | menús (mantener Alt muestra las letras de acceso) |
 
 | Ejecución y depuración | |
 |---|---|
@@ -260,7 +282,7 @@ detecta al abrir y se conserva al guardar. En Linux, los nombres de archivo de l
 | F4 | ver la pantalla de salida |
 | F6 | cambiar a/desde la ventana Immediate |
 | F2 | lista de SUBs y FUNCTIONs |
-| Ctrl+Pausa (Ctrl+Bloq Despl) | detener el programa |
+| Ctrl+Pausa o Ctrl+Alt+Esc | detener el programa en la instrucción actual (F5 continúa) |
 | F1 / Shift+F1 | ayuda sobre la palabra del cursor / uso de la ayuda |
 
 ### Gráficos y sonido
@@ -328,10 +350,28 @@ La carpeta `examples` incluye `NAVES.BAS`, un juego completo que usa todo esto.
 
 ### Opciones
 
-En **Options**: colores, barras de desplazamiento, resaltado de sintaxis, pantalla de 50 líneas, efecto CRT
-(curvatura y líneas de barrido de dos-like, o imagen nítida en proporción 4:3), comprobación de sintaxis y
+En **Options**: colores, barras de desplazamiento, tamaño del tabulador (4 por defecto), resaltado de sintaxis,
+pantalla de 50 líneas, efecto CRT (curvatura y líneas de barrido de dos-like, o imagen nítida en proporción 4:3),
+comprobación de sintaxis y
 **velocidad** (máxima o aproximada a un 386, 486 o Pentium, útil para juegos antiguos con bucles de espera).
 Las opciones se guardan en `~/.qblike.ini` (Linux) o `%APPDATA%\qblike.ini` (Windows).
+
+**Edit > Format Code** (Ctrl+Shift+F) pide confirmación y reformatea las líneas seleccionadas, o el módulo/SUB/FUNCTION
+visible entero: las instrucciones unidas con `:` pasan a líneas separadas, los `IF` de una línea con varias
+instrucciones se convierten en `IF` de bloque, y los bloques se reindentan con el tamaño del tabulador. Se
+conservan cadenas, comentarios, `DATA`, etiquetas y números de línea, y Ctrl+Z lo deshace:
+
+```basic
+b%=1:INPUT a%                              b% = 1
+IF a%=7 THEN PRINT "HOLA": a%=9: b%=0      INPUT a%
+                                    ->     IF a% = 7 THEN
+                                               PRINT "HOLA"
+                                               a% = 9
+                                               b% = 0
+                                           END IF
+```
+
+En pantalla completa, el puntero del ratón no puede salir de la imagen, para que no se pierda en el borde negro.
 
 Si se cierra la ventana con cambios sin guardar, se crea una copia `NOMBRE.RECOVER.BAS`.
 
@@ -359,11 +399,12 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 | `src/help.c` | ayuda integrada |
 | `src/clip.c` | portapapeles del sistema |
 | `src/image.c` | carga de BMP y GIF (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
+| `src/beautify.c` | formateador de código (Edit > Format Code) |
 | `src/doslike/` | dos-like (con dos pequeños cambios, abajo) |
 
 Cambios en dos-like: `setcrtmode()` para activar o desactivar el efecto CRT en tiempo de ejecución,
-Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera de la ventana, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
-(que bloqueaba el teclado), y atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`). Se compila con `DISABLE_SCREEN_FRAME`
+Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera de la ventana, puntero confinado a la imagen en pantalla completa, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
+(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) y una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION). Se compila con `DISABLE_SCREEN_FRAME`
 (sin el marco del monitor) y `DISABLE_SYSTEM_CURSOR` (QBLike dibuja su propio cursor de ratón, como el
 controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 

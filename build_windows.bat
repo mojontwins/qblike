@@ -2,7 +2,7 @@
 rem ---------------------------------------------------------------
 rem  Compila QBLike para Windows. Usa UNA de estas opciones:
 rem ---------------------------------------------------------------
-set SRC=src\lexer.c src\compiler.c src\interp.c src\util.c src\using.c src\screen.c src\sound.c src\files.c src\source.c src\ide.c src\help.c src\clip.c src\image.c src\main.c src\doslike\dos.c
+set SRC=src\lexer.c src\compiler.c src\interp.c src\util.c src\using.c src\screen.c src\sound.c src\files.c src\source.c src\ide.c src\help.c src\clip.c src\image.c src\beautify.c src\main.c src\doslike\dos.c
 
 rem  1) Visual Studio: ejecutar desde "Developer Command Prompt"
 where cl >nul 2>nul

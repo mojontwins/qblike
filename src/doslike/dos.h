@@ -2999,6 +2999,24 @@ static APP_U32* load_crt_frame( void ) {
 }
 
 
+/* QBLike: window -> picture coordinates for the crisp 4:3 presentation or the CRT emulation;
+   returns 1 if the point falls inside the picture */
+typedef struct qbl_map_t { crtemu_pc_t* crt; int use_crt, bmp_w, bmp_h, shown_h; float scale, hb, vb; float rx0, ry0, rx1, ry1; } qbl_map_t;
+static int qbl_win_to_bmp( qbl_map_t const* m, int wx, int wy, int* bx, int* by ) {
+    /* outside the area the picture is drawn in, the CRT curvature formula folds back on itself */
+    if( wx < m->rx0 || wy < m->ry0 || wx >= m->rx1 || wy >= m->ry1 ) { *bx = *by = -1; return 0; }
+    if( m->use_crt ) {
+        crtemu_pc_coordinates_window_to_bitmap( m->crt, m->bmp_w, m->bmp_h, &wx, &wy );
+        *bx = wx; *by = wy;
+    } else {
+        float fx = ( wx - m->hb ) / m->scale;
+        float fy = ( ( wy - m->vb ) / m->scale ) * (float) m->bmp_h / (float) m->shown_h;
+        *bx = fx < 0.0f ? -1 : (int) fx;
+        *by = fy < 0.0f ? -1 : (int) fy;
+    }
+    return *bx >= 0 && *by >= 0 && *bx < m->bmp_w && *by < m->bmp_h;
+}
+
 static int app_proc( app_t* app, void* user_data ) {
     struct app_context_t* app_context = (struct app_context_t*) user_data;
    
@@ -3087,8 +3105,10 @@ static int app_proc( app_t* app, void* user_data ) {
     thread_signal_init( &user_thread_context.user_thread_terminated );
 
     #ifndef __wasm__
+    /* QBLike: the interpreter recurses for every SUB/FUNCTION call, so the program thread gets a large
+       stack of its own (the default is only 1 MB on Windows) */
     thread_ptr_t user_thread = thread_create( user_thread_proc, &user_thread_context,
-        THREAD_STACK_SIZE_DEFAULT );
+        64 * 1024 * 1024 );
 
     if( !thread_signal_wait( &user_thread_context.user_thread_initialized, 5000 ) ) {
         thread_signal_term( &user_thread_context.user_thread_initialized );
@@ -3261,21 +3281,55 @@ static int app_proc( app_t* app, void* user_data ) {
         int mouse_y = app_pointer_y( app );
         int bmp_w = width * internals->screen.cellwidth, bmp_h = height * internals->screen.cellheight;
         int mouse_outside = ( mouse_x <= -100000 );
-        if( crt && dos_crt_enabled ) {
+        int use_crt = crt && dos_crt_enabled;
+        int shown_h = ( bmp_w * 3 ) / 4;
+        if( shown_h > 768 || bmp_w > 1024 || shown_h <= 0 ) shown_h = bmp_h;
+        float scale = 1.0f, hb = 0.0f, vb = 0.0f;
+        if( !use_crt && bmp_w > 0 && bmp_h > 0 ) {
+            float ww = (float) app_drawable_width( app ), wh = (float) app_drawable_height( app );
+            float hs = ww / (float) bmp_w, vs = wh / (float) shown_h;
+            scale = hs < vs ? hs : vs;
+            if( scale <= 0.0f ) scale = 1.0f;
+            hb = ( ww - scale * bmp_w ) / 2.0f; vb = ( wh - scale * shown_h ) / 2.0f;
+        }
+        if( use_crt ) {
             crtemu_pc_coordinates_window_to_bitmap( crt, bmp_w, bmp_h, &mouse_x, &mouse_y );
         } else if( bmp_w > 0 && bmp_h > 0 ) {
             /* QBLike: inverse of the crisp 4:3 presentation (centred, aspect-fitted, linear scaling) */
-            int shown_h = ( bmp_w * 3 ) / 4;
-            if( shown_h > 768 || bmp_w > 1024 || shown_h <= 0 ) shown_h = bmp_h;
-            float ww = (float) app_drawable_width( app ), wh = (float) app_drawable_height( app );
-            float hs = ww / (float) bmp_w, vs = wh / (float) shown_h;
-            float scale = hs < vs ? hs : vs;
-            if( scale <= 0.0f ) scale = 1.0f;
-            float hb = ( ww - scale * bmp_w ) / 2.0f, vb = ( wh - scale * shown_h ) / 2.0f;
             float fx = ( mouse_x - hb ) / scale;
             float fy = ( ( mouse_y - vb ) / scale ) * (float) bmp_h / (float) shown_h;
             mouse_x = fx < 0.0f ? -1 : (int) fx;
             mouse_y = fy < 0.0f ? -1 : (int) fy;
+        }
+        /* QBLike: in fullscreen the pointer can't leave the picture (it would get lost in the black
+           border and the screen edges would be hard to click). The nearest point inside is found by
+           bisection on the line from the centre of the picture to the pointer, which works for the
+           crisp presentation and for the curved CRT picture alike. */
+        if( fullscreen && !mouse_outside && bmp_w > 0 && bmp_h > 0 &&
+            ( mouse_x < 0 || mouse_y < 0 || mouse_x >= bmp_w || mouse_y >= bmp_h ) ) {
+            qbl_map_t m = { crt, use_crt, bmp_w, bmp_h, shown_h, scale, hb, vb, 0, 0, 0, 0 };
+            float ww = (float) app_drawable_width( app ), wh = (float) app_drawable_height( app );
+            if( use_crt ) {   /* same 4.25:3 fitted area as crtemu_pc */
+                float tw = ww, th = ( ww * 3.0f ) / 4.25f;
+                if( th > wh ) { th = wh; tw = ( wh * 4.25f ) / 3.0f; }
+                m.rx0 = ( ww - tw ) / 2.0f; m.ry0 = ( wh - th ) / 2.0f; m.rx1 = m.rx0 + tw; m.ry1 = m.ry0 + th;
+            } else {
+                m.rx0 = hb; m.ry0 = vb; m.rx1 = hb + bmp_w * scale; m.ry1 = vb + shown_h * scale;
+            }
+            int px = app_pointer_x( app ), py = app_pointer_y( app );
+            int cx = (int)( ( m.rx0 + m.rx1 ) / 2.0f ), cy = (int)( ( m.ry0 + m.ry1 ) / 2.0f );   /* centre of the picture */
+            float lo = 0.0f, hi = 1.0f;
+            for( int it = 0; it < 18; ++it ) {
+                float t = ( lo + hi ) / 2.0f;
+                int bx, by;
+                if( qbl_win_to_bmp( &m, cx + (int)( ( px - cx ) * t ), cy + (int)( ( py - cy ) * t ), &bx, &by ) ) lo = t; else hi = t;
+            }
+            int wx = cx + (int)( ( px - cx ) * lo ), wy = cy + (int)( ( py - cy ) * lo );
+            int bx, by;
+            if( qbl_win_to_bmp( &m, wx, wy, &bx, &by ) ) {
+                app_pointer_pos( app, wx, wy );
+                mouse_x = bx; mouse_y = by;
+            }
         }
         if( mouse_outside || mouse_x < 0 || mouse_y < 0 || mouse_x >= bmp_w || mouse_y >= bmp_h ) {
             internals->input.mouse_x = -1;   /* QBLike: pointer outside the picture or the window */

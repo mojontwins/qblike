@@ -40,7 +40,7 @@ static int C_TEXT_FG = 7, C_TEXT_BG = 1;
 static int C_CUR_FG = 15, C_CUR_BG = 1;     /* current statement */
 static int C_BRK_FG = 7, C_BRK_BG = 4;      /* breakpoint lines */
 static int opt_scrollbars = 1;
-static int opt_tabstops = 8;
+static int opt_tabstops = 4;
 static int opt_syntax = 1;
 static int opt_rows = 25;
 static int opt_highlight = 1;
@@ -140,9 +140,18 @@ static int hot_len(const char *s) { int n = 0; for (; *s; s++) if (*s != '&') n+
 static int hot_key(const char *s) { const char *a = strchr(s, '&'); return a ? toupper((unsigned char)a[1]) : 0; }
 
 static int cur_x = 0, cur_y = 0, cur_vis = 0;
+static int dlg_block_cursor = 0;   /* a dialog is on screen: steady block cursor on the focused control */
 static void present(void) {
-    /* overwrite mode: block cursor drawn by inverting the cell */
-    if (cur_vis && overwrite && !focus_imm && 0) {}
+    if (dlg_block_cursor && cur_vis && cur_x >= 0 && cur_x < SW && cur_y >= 0 && cur_y < SH) {
+        /* the blinking text cursor alone can be hard to see in a dialog: invert the cell as well */
+        static uint16_t tmp[SW * 60];
+        memcpy(tmp, cells, sizeof(uint16_t) * (size_t)(SW * SH));
+        uint16_t c = tmp[cur_y * SW + cur_x];
+        int fg = (c >> 8) & 15, bg = (c >> 12) & 15;
+        tmp[cur_y * SW + cur_x] = (uint16_t)((c & 0xFF) | (bg << 8) | (fg << 12));
+        present_text_cells(tmp, SW, SH, cur_x, cur_y, cur_vis);
+        return;
+    }
     present_text_cells(cells, SW, SH, cur_x, cur_y, cur_vis);
 }
 
@@ -193,6 +202,7 @@ static int translate_code(int raw) {
         return K_NONE;
     }
     if (code == 8 && ct) return 8 | K_CTRL;   /* Ctrl+H */
+    if (code == 6 && ct && sh) return 6 | K_CTRL | K_SHIFT;   /* Ctrl+Shift+F: Format Code */
     return code;
 }
 
@@ -202,7 +212,7 @@ static int get_key(void) {
     for (;;) {
         kb_poll();
         int t, x, y;
-        if (mouse_get(&t, &x, &y)) { mouse_type = t; mouse_x = x; mouse_y = y; return K_MOUSE; }
+        if (mouse_get(&t, &x, &y)) { if (getenv("QBLIKE_KEYLOG")) fprintf(stderr, "mouse t=%d x=%d y=%d\n", t, x, y); mouse_type = t; mouse_x = x; mouse_y = y; return K_MOUSE; }
         int c = kb_get_code();
         if (c >= 0) {
             int k = translate_code(c);
@@ -329,6 +339,12 @@ static int format_line(const char *in, char *out, int outsz, int update_case) {
             }
             case TK_ID: {
                 char base[64], sfx;
+                if (firstkw == KW_DEFINT || firstkw == KW_DEFLNG || firstkw == KW_DEFSNG || firstkw == KW_DEFDBL || firstkw == KW_DEFSTR) {
+                    /* letter ranges of DEFtype are not variable names: upper case, kept out of the case dictionary */
+                    snprintf(txt, sizeof txt, "%s", t->s);
+                    for (char *q = txt; *q; q++) *q = (char)toupper((unsigned char)*q);
+                    break;
+                }
                 id_base(t->s, base, sizeof base, &sfx);
                 CaseEnt *e = cdict_find(base);
                 if (!e || update_case) { cdict_set(base, update_case); e = cdict_find(base); }
@@ -380,6 +396,8 @@ static int format_line(const char *in, char *out, int outsz, int update_case) {
                         if (prev == PT_NONE || prev == PT_BIN || prev == PT_UNARY || prev == PT_LPAR || prev == PT_COMMA ||
                             prev == PT_SEMI || prev == PT_COLON || prev == PT_KW || prev == PT_NOTKW) cls = PT_UNARY;
                         else cls = PT_BIN;
+                        if (c == '-' && (firstkw == KW_DEFINT || firstkw == KW_DEFLNG || firstkw == KW_DEFSNG || firstkw == KW_DEFDBL || firstkw == KW_DEFSTR))
+                            tight_minus = 1;                  /* DEFINT A-Z */
                         if (c == '-' && prev == PT_RPAR && i + 1 < tl.n &&
                             ((tl.t[i + 1].k == TK_OP && tl.t[i + 1].kw == '(') || (tl.t[i + 1].k == TK_KW && tl.t[i + 1].kw == KW_STEP)) &&
                             (firstkw == KW_LINE || firstkw == KW_GET || firstkw == KW_VIEW || firstkw == KW_WINDOW)) tight_minus = 1;
@@ -704,6 +722,31 @@ static void delete_selection(void) {
     clamp_cursor();
 }
 
+/* Ctrl+C / Ctrl+X without a selection act on the whole current line, as in modern editors;
+   pasting such a line inserts it above the cursor line */
+static char *line_clip = NULL;
+static void copy_line(void) {
+    commit_line();
+    Part *p = P();
+    const char *t = line_text(p->cy);
+    size_t l = strlen(t);
+    char *b = (char *)qb_alloc(l + 2);
+    memcpy(b, t, l); b[l] = '\n'; b[l + 1] = 0;
+    clip_set(b);
+    free(line_clip); line_clip = b;
+}
+static void cut_line(void) {
+    copy_line();
+    Part *p = P();
+    snapshot();
+    if (p->cy < p->n - 1) delete_range(p->cy, 0, p->cy + 1, 0);
+    else delete_range(p->cy, 0, p->cy, (int)strlen(line_text(p->cy)));
+    p->cx = 0;
+    sel_on = 0;
+    mark_modified();
+    clamp_cursor();
+}
+
 static void format_lines(int y0, int y1) {
     Part *p = P();
     for (int y = y0; y <= y1 && y < p->n; y++) {
@@ -716,7 +759,14 @@ static void paste_clip(void) {
     char *t = clip_get();
     if (!t || !*t) return;
     if (sel_nonempty()) delete_selection();
-    else snapshot();
+    else {
+        snapshot();
+        /* whole line copied with Ctrl+C/X and no selection: it goes above (CR/LF-insensitive) */
+        const char *a = t, *b = line_clip;
+        while (b && *a && *b) { if (*a == '\r') { a++; continue; } if (*a != *b) break; a++; b++; }
+        while (a && *a == '\r') a++;
+        if (b && !*a && !*b) P()->cx = 0;
+    }
     sel_on = 0;
     int y0 = P()->cy;
     insert_text(t);
@@ -796,7 +846,7 @@ static void bp_toggle(int part, int line) {
 /* ------------------------------------------------------------------ */
 enum {
     CMD_NONE, CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_SAVEAS, CMD_PRINT, CMD_EXIT,
-    CMD_UNDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_CLEAR, CMD_NEWSUB, CMD_NEWFUNC,
+    CMD_UNDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_CLEAR, CMD_NEWSUB, CMD_NEWFUNC, CMD_FORMAT,
     CMD_SUBS, CMD_SPLIT, CMD_OUTPUT,
     CMD_FIND, CMD_REPEAT, CMD_CHANGE,
     CMD_START, CMD_RESTART, CMD_CONTINUE,
@@ -817,15 +867,17 @@ static Menu menus[] = {
         { "-", "", 0, "" },
         { "&Print...", "", CMD_PRINT, "Prints specified text" },
         { "E&xit", "", CMD_EXIT, "Exits " QB_NAME " and returns to the operating system" } } },
-    { "&Edit", 8, 8, {
+    { "&Edit", 8, 10, {
         { "&Undo", "Alt+Backspace", CMD_UNDO, "Restores the text as it was before the last edit" },
-        { "Cu&t", "Shift+Del", CMD_CUT, "Deletes selected text and copies it to buffer" },
-        { "&Copy", "Ctrl+Ins", CMD_COPY, "Copies selected text to buffer" },
-        { "&Paste", "Shift+Ins", CMD_PASTE, "Inserts buffer contents at current location" },
+        { "Cu&t", "Ctrl+X", CMD_CUT, "Deletes selected text (or the current line) and copies it to the clipboard" },
+        { "&Copy", "Ctrl+C", CMD_COPY, "Copies selected text (or the current line) to the clipboard" },
+        { "&Paste", "Ctrl+V", CMD_PASTE, "Inserts clipboard contents at current location" },
         { "Cl&ear", "Del", CMD_CLEAR, "Deletes selected text without copying it to buffer" },
         { "-", "", 0, "" },
         { "New &SUB...", "", CMD_NEWSUB, "Opens a window for a new subprogram" },
-        { "New &FUNCTION...", "", CMD_NEWFUNC, "Opens a window for a new FUNCTION procedure" } } },
+        { "New &FUNCTION...", "", CMD_NEWFUNC, "Opens a window for a new FUNCTION procedure" },
+        { "-", "", 0, "" },
+        { "Format C&ode...", "Ctrl+Shift+F", CMD_FORMAT, "Splits ':' statements, expands single-line IFs and re-indents the selection or view" } } },
     { "&View", 14, 3, {
         { "&SUBs...", "F2", CMD_SUBS, "Displays a loaded SUB, FUNCTION, module, or include file" },
         { "S&plit", "", CMD_SPLIT, "Divides screen into two View windows" },
@@ -908,7 +960,9 @@ static void draw_menubar(void) {
         int fg = sel ? 7 : 0, bg = sel ? 0 : 7;
         int w = hot_len(m->title);
         fill(m->x - 1, 0, w + 2, 1, ' ', fg, bg);
-        hot_at(m->x, 0, m->title, fg, bg, (menu_bar_active || menu_open >= 0) ? 15 : fg);
+        extern int kb_alt_held(void);
+        int show = menu_bar_active || menu_open >= 0 || kb_alt_held();
+        hot_at(m->x, 0, m->title, fg, bg, show ? 15 : fg);
     }
 }
 
@@ -1098,6 +1152,7 @@ static void draw_dropdown(void) {
 }
 
 static void draw_all(void) {
+    dlg_block_cursor = 0;
     layout();
     fill(0, 0, SW, SH, ' ', C_TEXT_FG, C_TEXT_BG);
     draw_menubar();
@@ -1133,6 +1188,7 @@ typedef struct Ctl {
     int checked;
     int id;
     int group;
+    int selall;         /* field: whole text selected (typing replaces it) */
 } Ctl;
 
 typedef struct Dlg {
@@ -1166,6 +1222,7 @@ static void draw_dialog(Dlg *d) {
         puts_at(X + (d->w - (int)strlen(t)) / 2, Y, t, 0, 7);
     }
     shadow(X, Y, d->w, d->h);
+    dlg_block_cursor = 1;
     int curx = -1, cury = -1;
     for (int i = 0; i < d->n; i++) {
         Ctl *c = &d->c[i];
@@ -1185,7 +1242,8 @@ static void draw_dialog(Dlg *d) {
                 if (c->pos >= c->scroll + c->w) c->scroll = c->pos - c->w + 1;
                 for (int k = 0; k < c->w; k++) {
                     int idx = c->scroll + k;
-                    put(x + k, y, idx < l ? (unsigned char)c->text[idx] : ' ', 0, 7);
+                    int hl = foc && c->selall && idx < l;
+                    put(x + k, y, idx < l ? (unsigned char)c->text[idx] : ' ', hl ? 7 : 0, hl ? 0 : 7);
                 }
                 if (foc) { curx = x + c->pos - c->scroll; cury = y; }
                 break;
@@ -1198,8 +1256,8 @@ static void draw_dialog(Dlg *d) {
                 for (int r = 0; r < c->h; r++) {
                     int idx = c->top + r;
                     int sel = idx == c->sel && c->nitems > 0;
-                    int fg = sel ? (foc ? 7 : 0) : 0, bg = sel ? (foc ? 0 : 7) : 7;
-                    if (sel && !foc) { fg = 0; bg = 7; }
+                    /* selected item: bright on black with the focus, white on dark gray without it */
+                    int fg = sel ? 15 : 0, bg = sel ? (foc ? 0 : 8) : 7;
                     fill(x, y + r, c->w, 1, ' ', fg, bg);
                     if (idx < c->nitems) putsn_at(x + 1, y + r, c->items[idx], (int)strlen(c->items[idx]) < c->w - 1 ? (int)strlen(c->items[idx]) : c->w - 1, fg, bg);
                 }
@@ -1207,20 +1265,25 @@ static void draw_dialog(Dlg *d) {
                 break;
             }
             case CT_CHECK:
-                puts_at(x, y, c->checked ? "[X] " : "[ ] ", 0, 7);
-                hot_at(x + 4, y, c->label, 0, 7, 15);
+            case CT_RADIO: {
+                const char *mark = c->type == CT_CHECK ? (c->checked ? "[X]" : "[ ]") : (c->checked ? "(\x07)" : "( )");
+                puts_at(x, y, mark, 0, 7);
+                /* focused: label shown in reverse video */
+                int lfg = foc ? 15 : 0, lbg = foc ? 0 : 7;
+                if (foc) fill(x + 3, y, hot_len(c->label) + 2, 1, ' ', lfg, lbg);
+                hot_at(x + 4, y, c->label, lfg, lbg, foc ? 14 : 15);
                 if (foc) { curx = x + 1; cury = y; }
                 break;
-            case CT_RADIO:
-                puts_at(x, y, c->checked ? "(\x07) " : "( ) ", 0, 7);
-                hot_at(x + 4, y, c->label, 0, 7, 15);
-                if (foc) { curx = x + 1; cury = y; }
-                break;
+            }
             case CT_BUTTON: {
                 int isdef = (d->c[d->focus].type == CT_BUTTON) ? foc : (c->id == d->defbutton);
-                put(x, y, '<', isdef ? 15 : 0, 7);
-                hot_at(x + 2, y, c->label, 0, 7, 15);
-                put(x + 3 + hot_len(c->label), y, '>', isdef ? 15 : 0, 7);
+                /* focused button in reverse video; the default one (Enter) has bright brackets */
+                int bfg = foc ? 15 : 0, bbg = foc ? 0 : 7;
+                int bl = hot_len(c->label);
+                fill(x, y, bl + 4, 1, ' ', bfg, bbg);
+                put(x, y, '<', (isdef || foc) ? 15 : 0, bbg);
+                hot_at(x + 2, y, c->label, bfg, bbg, foc ? 14 : 15);
+                put(x + 3 + bl, y, '>', (isdef || foc) ? 15 : 0, bbg);
                 if (foc) { curx = x + 2; cury = y; }
                 break;
             }
@@ -1259,7 +1322,14 @@ static int run_dialog(Dlg *d) {
     }
     double lastclick = 0;
     int lastclickctl = -1;
+    int lastfocus = -1;
     for (;;) {
+        if (d->focus != lastfocus) {
+            /* entering a text field selects its contents, so typing replaces them */
+            Ctl *fc = &d->c[d->focus];
+            if (fc->type == CT_FIELD && fc->text[0]) { fc->selall = 1; fc->pos = (int)strlen(fc->text); }
+            lastfocus = d->focus;
+        }
         draw_background();
         draw_dialog(d);
         present();
@@ -1292,6 +1362,8 @@ static int run_dialog(Dlg *d) {
                 int p = h->scroll + (mouse_x - (d->x + h->x));
                 int l = (int)strlen(h->text);
                 h->pos = p < 0 ? 0 : p > l ? l : p;
+                h->selall = 0;          /* a click places the cursor */
+                lastfocus = hit;
             }
             continue;
         }
@@ -1333,6 +1405,29 @@ static int run_dialog(Dlg *d) {
             case CT_FIELD: {
                 int l = (int)strlen(c->text);
                 int base = k & ~K_SHIFT;
+                if (k == 3 || k == 24) {          /* Ctrl+C / Ctrl+X: the whole field */
+                    clip_set(c->text);
+                    if (k == 24) { c->text[0] = 0; c->pos = 0; c->selall = 0; if (d->on_change) d->on_change(d, c); }
+                    break;
+                }
+                if (k == 22) {                    /* Ctrl+V: insert (or replace the selection) */
+                    char *t = clip_get();
+                    if (c->selall) { c->text[0] = 0; c->pos = 0; l = 0; c->selall = 0; }
+                    for (; t && *t && *t != '\n' && *t != '\r' && l < (int)sizeof c->text - 1; t++, l++) {
+                        memmove(c->text + c->pos + 1, c->text + c->pos, (size_t)(l - c->pos + 1));
+                        c->text[c->pos++] = *t;
+                    }
+                    if (d->on_change) d->on_change(d, c);
+                    break;
+                }
+                if (c->selall) {
+                    c->selall = 0;
+                    /* typing, Backspace or Del replace the selected text; movement keys keep it */
+                    if ((k >= 32 && k < 256) || k == 8 || base == K_DEL) {
+                        c->text[0] = 0; c->pos = 0; l = 0;
+                        if (k == 8 || base == K_DEL) { if (d->on_change) d->on_change(d, c); break; }
+                    }
+                }
                 if (base == K_LEFT) { if (c->pos > 0) c->pos--; }
                 else if (base == K_RIGHT) { if (c->pos < l) c->pos++; }
                 else if (base == K_HOME) c->pos = 0;
@@ -2379,7 +2474,7 @@ static void save_config(void) {
     FILE *f = fopen(p, "w");
     if (!f) return;
     fprintf(f, "text_fg=%d\ntext_bg=%d\ncur_fg=%d\ncur_bg=%d\nbrk_fg=%d\nbrk_bg=%d\n", C_TEXT_FG, C_TEXT_BG, C_CUR_FG, C_CUR_BG, C_BRK_FG, C_BRK_BG);
-    fprintf(f, "speed=%d\n", opt_speed);
+    fprintf(f, "speed=%d\ncfgver=2\n", opt_speed);
     fprintf(f, "scrollbars=%d\ntabstops=%d\nsyntax=%d\nhighlight=%d\nrows=%d\ncrt=%d\n", opt_scrollbars, opt_tabstops, opt_syntax, opt_highlight, opt_rows, opt_crt);
     fclose(f);
 }
@@ -2389,23 +2484,26 @@ static void load_config(void) {
     FILE *f = fopen(p, "r");
     if (!f) return;
     char line[128];
+    int cfgver = 1;
     while (fgets(line, sizeof line, f)) {
         char k[64]; int v;
         if (sscanf(line, "%63[^=]=%d", k, &v) != 2) continue;
-        if (!strcmp(k, "text_fg")) C_TEXT_FG = v & 15;
+        if (!strcmp(k, "cfgver")) cfgver = v;
+        else if (!strcmp(k, "text_fg")) C_TEXT_FG = v & 15;
         else if (!strcmp(k, "text_bg")) C_TEXT_BG = v & 15;
         else if (!strcmp(k, "cur_fg")) C_CUR_FG = v & 15;
         else if (!strcmp(k, "cur_bg")) C_CUR_BG = v & 15;
         else if (!strcmp(k, "brk_fg")) C_BRK_FG = v & 15;
         else if (!strcmp(k, "brk_bg")) C_BRK_BG = v & 15;
         else if (!strcmp(k, "scrollbars")) opt_scrollbars = v != 0;
-        else if (!strcmp(k, "tabstops")) opt_tabstops = v >= 1 && v <= 16 ? v : 8;
+        else if (!strcmp(k, "tabstops")) opt_tabstops = v >= 1 && v <= 16 ? v : 4;
         else if (!strcmp(k, "syntax")) opt_syntax = v != 0;
         else if (!strcmp(k, "highlight")) opt_highlight = v != 0;
         else if (!strcmp(k, "rows")) opt_rows = (v == 43 || v == 50) ? v : 25;
         else if (!strcmp(k, "crt")) opt_crt = v != 0;
         else if (!strcmp(k, "speed")) opt_speed = (v >= 0 && v <= 3) ? v : 0;
     }
+    if (cfgver < 2 && opt_tabstops == 8) opt_tabstops = 4;   /* 8 was the old default, not a choice */
     fclose(f);
 }
 
@@ -2838,9 +2936,63 @@ static void ed_delete(int word) {
 
 static void exec_command(int cmd, int nested, int *ret);
 
+/* ------------------------------------------------------------------ */
+/* Edit > Format Code (beautifier, src/beautify.c)                     */
+/* ------------------------------------------------------------------ */
+char **qb_beautify(char **lines, int n, int base, int indent, int (*fmt)(const char *, char *, int), int *outn);
+int ide_format_text(const char *in, char *out, int outsz) { format_line(in, out, outsz, 0); return 1; }
+
+static void cmd_format(void) {
+    if (focus_imm) return;
+    commit_line();
+    ensure_lines();
+    Part *p = P();
+    int y0 = 0, y1 = p->n - 1, sel = 0;
+    if (sel_nonempty()) {
+        int x0, x1;
+        sel_range(&y0, &x0, &y1, &x1);
+        if (x1 == 0 && y1 > y0) y1--;     /* selection ending at the start of a line excludes it */
+        sel = 1;
+    }
+    char what[120];
+    if (sel) snprintf(what, sizeof what, "the %d selected line%s", y1 - y0 + 1, y1 > y0 ? "s" : "");
+    else if (curpart == 0) snprintf(what, sizeof what, "the module-level code");
+    else snprintf(what, sizeof what, "%s %s", p->isfunc ? "FUNCTION" : "SUB", p->name);
+    char msg[400];
+    snprintf(msg, sizeof msg, "Format %s?\n\nStatements joined with ':' are split into lines,\n"
+             "single-line IFs with several statements become\nblock IFs, and the code is re-indented.", what);
+    const char *b[] = { "OK", "Cancel" };
+    if (message_box("Format Code", msg, b, 2, 0) != 0) return;
+    int base = 0;
+    if (sel) {                              /* keep the indentation level the selection starts at */
+        int col = 0;
+        for (const char *s = p->lines[y0]; *s == ' ' || *s == '\t'; s++) col += *s == '\t' ? opt_tabstops - col % opt_tabstops : 1;
+        base = col / (opt_tabstops > 0 ? opt_tabstops : 1);
+    }
+    int on = 0;
+    char **out = qb_beautify(p->lines + y0, y1 - y0 + 1, base, opt_tabstops, ide_format_text, &on);
+    snapshot();
+    linebuf_line = -1;
+    int old = y1 - y0 + 1;
+    for (int y = y1; y >= y0; y--) part_delete(p, y);
+    for (int i = 0; i < on; i++) { part_insert(p, y0 + i, out[i]); free(out[i]); }
+    free(out);
+    for (int i = 0; i < nbps; i++) {        /* breakpoints: drop those in the block, move the ones after it */
+        if (bps[i].part != curpart) continue;
+        if (bps[i].line >= y0 && bps[i].line <= y1) { bps[i] = bps[--nbps]; i--; }
+        else if (bps[i].line > y1) bps[i].line += on - old;
+    }
+    sel_on = 0;
+    if (sel && on > 0) { sel_on = 1; sel_ay = y0; sel_ax = 0; p->cy = y0 + on - 1; p->cx = (int)strlen(p->lines[p->cy]); }
+    else { p->cy = y0; p->cx = 0; }
+    mark_modified();
+    clamp_cursor();
+}
+
 /* returns >= 0 to end a nested (debugger) loop with that action */
 static int editor_key(int k, int nested) {
     Part *p = P();
+    if (k == (6 | K_CTRL | K_SHIFT)) { int ret = -1; exec_command(CMD_FORMAT, nested, &ret); return ret; }
     int shift = (k & K_SHIFT) != 0;
     int ctrl = (k & K_CTRL) != 0;
     int base = k & ~(K_SHIFT | K_CTRL);
@@ -2861,7 +3013,18 @@ static int editor_key(int k, int nested) {
         switch (base) {
             case K_UP: if (p->cy > 0) move_to_line(p->cy - 1); break;
             case K_DOWN: if (p->cy < p->n - 1) move_to_line(p->cy + 1); break;
-            case K_LEFT: if (p->cx > 0) p->cx--; else if (p->cy > 0) { move_to_line(p->cy - 1); p->cx = (int)strlen(line_text(p->cy)); } break;
+            case K_LEFT:
+                if (p->cx > 0) {
+                    /* at a tab stop with only spaces before it back to the previous stop, jump the whole tab */
+                    const char *s = line_text(p->cy);
+                    int l = (int)strlen(s), n = 1, ts = opt_tabstops;
+                    if (ts > 1 && p->cx % ts == 0) {
+                        n = ts;
+                        for (int i = p->cx - ts; i < p->cx; i++) if (i < l && s[i] != ' ') { n = 1; break; }
+                    }
+                    p->cx -= n;
+                } else if (p->cy > 0) { move_to_line(p->cy - 1); p->cx = (int)strlen(line_text(p->cy)); }
+                break;
             case K_RIGHT: {
                 int l = (int)strlen(line_text(p->cy));
                 if (p->cx < l) p->cx++;
@@ -2955,12 +3118,19 @@ static void exec_command(int cmd, int nested, int *ret) {
         case CMD_PRINT: break;
         case CMD_EXIT: if (nested) { pending_action = PA_EXIT; *ret = DBG_ABORT; } else if (confirm_discard()) quit_requested = 1; break;
         case CMD_UNDO: do_undo(); break;
-        case CMD_CUT: if (focus_imm) break; if (sel_nonempty()) { copy_selection(); delete_selection(); } break;
-        case CMD_COPY: if (focus_imm) break; copy_selection(); break;
+        case CMD_CUT:
+            if (focus_imm) { clip_set(immbuf); immbuf[0] = 0; imm_cx = 0; break; }
+            if (sel_nonempty()) { copy_selection(); delete_selection(); } else cut_line();
+            break;
+        case CMD_COPY:
+            if (focus_imm) { clip_set(immbuf); break; }
+            if (sel_nonempty()) copy_selection(); else copy_line();
+            break;
         case CMD_PASTE: if (focus_imm) { char *t = clip_get(); if (t) for (char *c = t; *c && *c != '\n'; c++) imm_key((unsigned char)*c); } else paste_clip(); break;
         case CMD_CLEAR: delete_selection(); break;
         case CMD_NEWSUB: new_proc_dialog(0); break;
         case CMD_NEWFUNC: new_proc_dialog(1); break;
+        case CMD_FORMAT: cmd_format(); break;
         case CMD_SUBS: subs_dialog(); break;
         case CMD_SPLIT: break;
         case CMD_OUTPUT: show_output_until_key(); break;
