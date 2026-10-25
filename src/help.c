@@ -242,7 +242,12 @@ static const char *extra_topics[][2] = {
       "  F7         Run to the cursor line\n"
       "  F9         Toggle breakpoint on the current line\n"
       "  F4         Show the output screen\n"
-      "  Ctrl+Break (or Ctrl+Pause, Ctrl+Scroll Lock)  stop a running program\n\n"
+      "  Ctrl+Break  stop a running program (also Ctrl+Alt+Esc, for keyboards\n"
+      "             without Break, and Ctrl+Pause / Ctrl+Scroll Lock)\n\n"
+      "  When a program is stopped, the editor shows the statement where it\n"
+      "  stopped. F5 continues from there, F8/F10 step. During INPUT it stops\n"
+      "  at the INPUT, which asks again when you continue. If you edit the\n"
+      "  program, it has to be restarted.\n\n"
       "  While stopped you can inspect variables in the Immediate window\n"
       "  (F6), e.g. PRINT x, and use Debug > Set Next Statement.\n\n"
       "  See also: <<Editing Keys>> <<STOP>>\n" },

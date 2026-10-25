@@ -1,0 +1,6 @@
+' SCREEN 3: 160x200 con 16 colores (PCjr / Tandy 1000)
+SCREEN 3
+FOR i = 0 TO 15: LINE (i * 10, 16)-(i * 10 + 9, 120), i, BF: NEXT
+CIRCLE (80, 160), 30, 14: PAINT (80, 160), 4, 14
+COLOR 15: LOCATE 1, 1: PRINT "PCjr/Tandy 160x200";
+DO: LOOP UNTIL INKEY$ <> ""

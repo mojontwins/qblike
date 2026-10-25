@@ -1067,7 +1067,7 @@ static int parse_input_fields(const char *line, int len, Expr **vars, int nvars,
     return 1;
 }
 
-static void exec_input(Stmt *s) {
+static int exec_input(Stmt *s) {
     if (s->e2) {
         /* INPUT #n */
         int fn = (int)qb_round_even(evn(s->e2));
@@ -1082,7 +1082,7 @@ static void exec_input(Stmt *s) {
             else dst->n = fit_num(dst->t, qb_val(p, l));
             free(p);
         }
-        return;
+        return 1;
     }
     char prompt[512];
     int pl = 0;
@@ -1096,12 +1096,12 @@ static void exec_input(Stmt *s) {
         scr_print(prompt, pl);
         char line[256];
         int len = 0;
-        if (!input_line(line, 255, &len)) return; /* aborted */
+        if (!input_line(line, 255, &len)) return 0; /* aborted (Break) */
         if (!s->i1) scr_newline();
         int r = parse_input_fields(line, len, s->args, s->nargs, 0);
         if (r == 1) {
             parse_input_fields(line, len, s->args, s->nargs, 1);
-            return;
+            return 1;
         }
         if (s->i1) scr_newline();
         if (r == -1) { scr_print("Overflow", 8); scr_newline(); }
@@ -1110,7 +1110,7 @@ static void exec_input(Stmt *s) {
     }
 }
 
-static void exec_line_input(Stmt *s) {
+static int exec_line_input(Stmt *s) {
     Value *dst;
     if (s->e2) {
         int fn = (int)qb_round_even(evn(s->e2));
@@ -1121,15 +1121,16 @@ static void exec_line_input(Stmt *s) {
         dst = lval(s->args[0]);
         val_setstr(dst, p, l);
         free(p);
-        return;
+        return 1;
     }
     if (s->e1) scr_print(s->e1->str, s->e1->slen);
     char line[256];
     int len = 0;
-    if (!input_line(line, 255, &len)) return;
+    if (!input_line(line, 255, &len)) return 0;   /* aborted (Break) */
     if (!s->i1) scr_newline();
     dst = lval(s->args[0]);
     val_setstr(dst, line, len);
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1460,8 +1461,9 @@ static int exec(Frame *f, int pc) {
                 }
                 rs->status = RUN_END;
                 longjmp(*rs->jb, 1);
-            case S_INPUT: exec_input(s); pc++; break;
-            case S_LINEINPUT: exec_line_input(s); pc++; break;
+            /* Break during INPUT stops at the INPUT itself; F5 asks again, as in QBasic */
+            case S_INPUT: if (exec_input(s) || !g_debug_enabled) pc++; else scr_newline(); break;
+            case S_LINEINPUT: if (exec_line_input(s) || !g_debug_enabled) pc++; else scr_newline(); break;
             case S_DIM: case S_REDIM: {
                 if (s->i3 == 0 && s->op == S_DIM) {
                     /* scalar DIM: no-op at run time */

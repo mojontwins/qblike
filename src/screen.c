@@ -691,8 +691,8 @@ static void present_program(void) {
             for (int x = 0; x + 3 < S.w; x += 4) memset(out + x, artifact_nibble(row + x), 4);
         }
     } else {
-    if (S.colors == 256) for (int i = 0; i < 256; i++) setpal(i, S.rgb[i][0], S.rgb[i][1], S.rgb[i][2]);
-    else for (int i = 0; i < 16; i++) setpal(i, S.rgb[S.attrpal[i]][0], S.rgb[S.attrpal[i]][1], S.rgb[S.attrpal[i]][2]);
+        if (S.colors == 256) for (int i = 0; i < 256; i++) setpal(i, S.rgb[i][0], S.rgb[i][1], S.rgb[i][2]);
+        else for (int i = 0; i < 16; i++) setpal(i, S.rgb[S.attrpal[i]][0], S.rgb[S.attrpal[i]][1], S.rgb[S.attrpal[i]][2]);
         if (S.mode == 3) {
             /* 160x200: each pixel is shown two pixels wide on a 320x200 screen */
             dw = 320;
@@ -904,8 +904,13 @@ void kb_poll(void) {
         }
         keydown_state[vk] = 1;
         if (sc) { last_scan = sc; scan_down[sc] = 1; }
-        if ((vk == KEY_PAUSE || vk == KEY_CANCEL || vk == KEY_SCROLL) && m_ctrl()) { break_flag = 1; continue; }
-        if (vk == KEY_CANCEL) { break_flag = 1; continue; }
+        /* Break: Ctrl+Pause (Ctrl+Break), Ctrl+Scroll Lock, and Ctrl+Alt+Esc for keyboards without a Break
+           key. Only while a program runs; in the editor these keys do nothing (no Break left pending). */
+        if (vk == KEY_CANCEL || ((vk == KEY_PAUSE || vk == KEY_SCROLL) && m_ctrl()) ||
+            (vk == KEY_ESCAPE && m_ctrl() && m_alt())) {
+            if (!display_owner_ide) break_flag = 1;
+            continue;
+        }
         int mb = modbits();
         int ext = extended_code(vk);
         if (ext) { kbq_push((ext << 8) | mb); continue; }
@@ -950,6 +955,19 @@ int kb_get_code(void) {
 }
 
 void kb_clear(void) { kbh = kbt = 0; }
+/* keys typed for the program but not read yet: kept aside while the IDE is in control (Break,
+   breakpoint, step) so they neither leak into the editor nor get lost when the program continues */
+static int kb_stash_buf[KBQ], kb_stash_n = 0;
+void kb_stash(void) {
+    kb_stash_n = 0;
+    while (kbh != kbt && kb_stash_n < KBQ) { kb_stash_buf[kb_stash_n++] = kbq[kbh]; kbh = (kbh + 1) % KBQ; }
+}
+void kb_unstash(int restore) {
+    kbh = kbt = 0;
+    if (restore) for (int i = 0; i < kb_stash_n; i++) kbq_push(kb_stash_buf[i]);
+    kb_stash_n = 0;
+    break_flag = 0;
+}
 int kb_lastscan(void) { return last_scan; }
 int kb_break_pressed(void) { int b = break_flag; break_flag = 0; return b; }
 void kb_push_ide_key(int code) { kbq_push(code); }

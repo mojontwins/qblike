@@ -1761,12 +1761,17 @@ int ide_debug_break(int stmt) {
         suspended = 0;
         if (trace_on) { scr_set_ide_owner(0); scr_show_output(); return DBG_STEP; }
     }
+    extern void kb_stash(void);
+    extern void kb_unstash(int restore);
+    kb_stash();                       /* the program's pending keys stay out of the editor */
     suspended = 1;
     scr_set_ide_owner(1);
     goto_location(s->part, s->line, 0);
     int r = ide_loop(1);
     suspended = 0;
-    if (r == DBG_CONTINUE || r == DBG_STEP || r == DBG_PSTEP) { scr_set_ide_owner(0); scr_show_output(); }
+    int resume = r == DBG_CONTINUE || r == DBG_STEP || r == DBG_PSTEP;
+    kb_unstash(resume);               /* ...and are given back if it continues */
+    if (resume) { scr_set_ide_owner(0); scr_show_output(); }
     if (r == DBG_CONTINUE && trace_on) r = DBG_STEP;
     return r;
 }
