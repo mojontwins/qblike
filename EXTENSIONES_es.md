@@ -24,7 +24,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [SCREEN 3 (PCjr / Tandy 1000)](#screen-3-pcjr--tandy-1000)
 - [Hardware emulado](#hardware-emulado)
   - [Memoria de vídeo (PEEK / POKE)](#memoria-de-vídeo-peek--poke), incluidos los modos planares EGA/VGA
-  - [Sincronización vertical (INP &H3DA, WAIT)](#sincronización-vertical-inp-h3da-wait)
+  - [Sincronización vertical (INP &H3DA, WAIT, WAIT VSYNC)](#sincronización-vertical-inp-h3da-wait-wait-vsync)
   - [Paleta VGA (OUT / INP &H3C7-&H3C9)](#paleta-vga-out--inp-h3c7-h3c9)
   - [CGA compuesto: colores por artefacto (OUT &H3D8)](#cga-compuesto-colores-por-artefacto-out-h3d8)
   - [Teclado (INP &H60, PEEK &H417)](#teclado-inp-h60-peek-h417)
@@ -418,7 +418,7 @@ Cada plano ocupa `ancho * alto / 8` bytes: 8000 en SCREEN 7, 16000 en SCREEN 8, 
 en SCREEN 12. Las páginas siguen a la primera cada 8 KB (SCREEN 7), 16 KB (SCREEN 8) o 32 KB (SCREEN 9);
 el desplazamiento elige la página, no `SCREEN ,,apage`. Los registros vuelven a sus valores por defecto con cada `SCREEN`.
 
-### Sincronización vertical (INP &H3DA, WAIT)
+### Sincronización vertical (INP &H3DA, WAIT, WAIT VSYNC)
 
 `INP(&H3DA)` devuelve el registro de estado de la VGA. El bit 3 (valor 8) está activo durante el
 retrazado vertical, que se emula a 70 Hz como en una VGA real. Al empezar cada retrazado se vuelca a la
@@ -430,7 +430,15 @@ WHILE (INP(&H3DA) AND 8) = 0: WEND      ' espera a que empiece el siguiente
 ' ...dibuja aquí...
 ```
 
-`WAIT &H3DA, 8` hace lo mismo en una sola instrucción. Mientras espera, el programa no consume CPU de forma innecesaria.
+`WAIT &H3DA, 8` hace lo mismo en una sola instrucción, y QBLike añade un alias más legible:
+
+```basic
+WAIT VSYNC                              ' = WAIT &H3DA, 8
+```
+
+`VSYNC` no es palabra reservada: los programas que tienen su propia `SUB VSync` siguen funcionando. Las tres
+formas (`INP`, `WAIT &H3DA` y `WAIT VSYNC`) usan el mismo reloj de 70 Hz, así que se pueden mezclar. Mientras
+espera, el programa no consume CPU de forma innecesaria.
 
 ### Paleta VGA (OUT / INP &H3C7-&H3C9)
 

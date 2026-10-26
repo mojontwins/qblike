@@ -94,7 +94,7 @@ The hardware tricks used by DOS games are emulated, and there are a few addition
 ```basic
 DEF SEG = &HA000: POKE y * 320& + x, c     ' direct VGA access (SCREEN 13)
 WHILE (INP(&H3DA) AND 8) <> 0: WEND        ' vertical sync (70 Hz)
-WHILE (INP(&H3DA) AND 8) = 0: WEND         '   (or WAIT &H3DA, 8)
+WHILE (INP(&H3DA) AND 8) = 0: WEND         '   (or WAIT &H3DA, 8, or NEW: WAIT VSYNC)
 OUT &H3C8, 0: OUT &H3C9, r: OUT &H3C9, g: OUT &H3C9, b   ' VGA palette
 k = INP(&H60)                              ' last key scan code
 IF MULTIKEY(75) THEN ...                   ' NEW: key held down (several at once)
@@ -306,7 +306,7 @@ Se emulan los trucos de hardware que usaban los juegos de DOS, y hay dos añadid
 ```basic
 DEF SEG = &HA000: POKE y * 320& + x, c     ' acceso directo a la VGA (SCREEN 13)
 WHILE (INP(&H3DA) AND 8) <> 0: WEND        ' sincronización vertical (70 Hz)
-WHILE (INP(&H3DA) AND 8) = 0: WEND         '   (o WAIT &H3DA, 8)
+WHILE (INP(&H3DA) AND 8) = 0: WEND         '   (o WAIT &H3DA, 8, o NUEVO: WAIT VSYNC)
 OUT &H3C8, 0: OUT &H3C9, r: OUT &H3C9, g: OUT &H3C9, b   ' paleta VGA
 k = INP(&H60)                              ' último código de tecla
 IF MULTIKEY(75) THEN ...                   ' NUEVO: tecla pulsada (varias a la vez)

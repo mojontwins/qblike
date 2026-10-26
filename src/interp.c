@@ -1894,6 +1894,7 @@ static int exec(Frame *f, int pc) {
                 pc++;
                 break;
             }
+            case S_VSYNC: gfx_waitvsync(); pc++; break;
             case S_WAIT: {
                 int port = (int)qb_round_even(evn(s->e1));
                 if (port == 0x3DA) gfx_waitvsync();

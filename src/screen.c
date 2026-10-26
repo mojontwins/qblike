@@ -1933,19 +1933,20 @@ int gfx_inp(int port) {
     return 0;
 }
 
+/* wait for the start of the next emulated vertical retrace (70 Hz, same phase as INP(&H3DA)),
+   then show the frame: used by VSYNC and WAIT &H3DA */
 void gfx_waitvsync(void) {
-    /* emulate waiting for vertical retrace at ~70 Hz */
-    static double next = 0;
+    const double period = 1.0 / 70.0;
     double t = sys_time();
-    double period = 1.0 / 70.0;
-    if (next < t - period) next = t;
-    next += period;
-    kb_poll();
-    scr_present(1);
-    while (sys_time() < next) {
-        double rem = next - sys_time();
+    double target = t - fmod(t, period) + period;
+    for (;;) {
+        double rem = target - sys_time();
+        if (rem <= 0) break;
         if (rem > 0.002) sys_sleep(1);
     }
+    vr_last = 1;            /* INP(&H3DA) now reports the retrace that just began */
+    kb_poll();
+    scr_present(1);
 }
 
 /* ---- BSAVE / BLOAD ----

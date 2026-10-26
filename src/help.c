@@ -162,7 +162,7 @@ static const HelpEnt H[] = {
 { "VARSEG", "VARSEG(variable)", "See VARPTR.", "VARPTR" },
 { "VIEW", "VIEW [[SCREEN] (x1!,y1!)-(x2!,y2!) [,[color%] [,border%]]]", "Defines a graphics viewport.", "WINDOW VIEW PRINT CLS" },
 { "VIEW PRINT", "VIEW PRINT [toprow% TO bottomrow%]", "Sets the text scrolling area.", "VIEW CLS" },
-{ "WAIT", "WAIT &H3DA, 8", "Waits for the start of the vertical retrace (about 70 times per second).\nOther ports are ignored.", "INP" },
+{ "WAIT", "WAIT &H3DA, 8\nWAIT VSYNC", "Waits for the start of the next vertical retrace (emulated at 70 Hz, like\na VGA card) and shows what has been drawn, so animation doesn't flicker.\nOther ports are ignored.\n\nWAIT VSYNC is a QBLike alias of WAIT &H3DA, 8. VSYNC is not a reserved word:\nprograms with their own SUB VSync keep working.\n\n  DO\n      WAIT VSYNC\n      PUT (x, y), sprite, PSET\n  LOOP", "INP" },
 { "WHILE", "WHILE condition\n    [statementblock]\nWEND", "Repeats while a condition is true.", "DO" },
 { "WIDTH", "WIDTH [columns%] [,rows%]", "Changes the text screen size (40/80 columns; 25, 43 or 50 rows in\nSCREEN 0; 30 or 60 rows in SCREEN 12; 20 columns in SCREEN 3).", "SCREEN" },
 { "WINDOW", "WINDOW [[SCREEN] (x1!,y1!)-(x2!,y2!)]", "Defines logical coordinates for graphics. Without SCREEN, y grows\nupwards.", "VIEW PMAP" },

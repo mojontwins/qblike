@@ -313,7 +313,14 @@ static int tokens_equal(TokLine *a, TokLine *b) {
    a statement, is followed by "(" or STEP, and the program has no SUB/FUNCTION called FILL */
 static int fill_stmt_at(TokLine *tl, int i) {
     Tok *t = &tl->t[i];
-    if (t->k != TK_ID || qb_stricmp(t->s, "FILL") != 0) return 0;
+    if (t->k != TK_ID) return 0;
+    if (qb_stricmp(t->s, "VSYNC") == 0) {             /* WAIT VSYNC */
+        Tok *n = i + 1 < tl->n ? &tl->t[i + 1] : NULL;
+        return i > 0 && tl->t[i - 1].k == TK_KW && tl->t[i - 1].kw == KW_WAIT &&
+               (!n || n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE));
+    }
+    int vs = 0;
+    if (qb_stricmp(t->s, "FILL") != 0) return 0;
     if (i > 0) {
         Tok *p = &tl->t[i - 1];
         int ok = (p->k == TK_OP && p->kw == ':') || (p->k == TK_KW && (p->kw == KW_THEN || p->kw == KW_ELSE)) ||
@@ -322,8 +329,10 @@ static int fill_stmt_at(TokLine *tl, int i) {
     }
     if (i + 1 >= tl->n) return 0;
     Tok *n = &tl->t[i + 1];
-    if (!((n->k == TK_OP && n->kw == '(') || (n->k == TK_KW && n->kw == KW_STEP))) return 0;
-    for (int pi = 1; pi < doc.nparts; pi++) if (qb_stricmp(doc.parts[pi].name, "FILL") == 0) return 0;
+    if (vs) {
+        if (!(n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE))) return 0;
+    } else if (!((n->k == TK_OP && n->kw == '(') || (n->k == TK_KW && n->kw == KW_STEP))) return 0;
+    for (int pi = 1; pi < doc.nparts; pi++) if (qb_stricmp(doc.parts[pi].name, vs ? "VSYNC" : "FILL") == 0) return 0;
     return 1;
 }
 
@@ -357,7 +366,7 @@ static int format_line(const char *in, char *out, int outsz, int update_case) {
             }
             case TK_ID: {
                 char base[64], sfx;
-                if (fill_stmt_at(&tl, i)) { strcpy(txt, "FILL"); cls = PT_KW; break; }
+                if (fill_stmt_at(&tl, i)) { strcpy(txt, qb_stricmp(t->s, "VSYNC") == 0 ? "VSYNC" : "FILL"); cls = PT_KW; break; }
                 if (firstkw == KW_DEFINT || firstkw == KW_DEFLNG || firstkw == KW_DEFSNG || firstkw == KW_DEFDBL || firstkw == KW_DEFSTR) {
                     /* letter ranges of DEFtype are not variable names: upper case, kept out of the case dictionary */
                     snprintf(txt, sizeof txt, "%s", t->s);

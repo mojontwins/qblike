@@ -25,7 +25,7 @@ The only behavior difference from QBasic is that `PUT` clips the image instead o
   - [SCREEN 3 (PCjr / Tandy 1000)](#screen-3-pcjr--tandy-1000)
 - [Emulated hardware](#emulated-hardware)
   - [Video memory (PEEK / POKE)](#video-memory-peek--poke), including the planar EGA/VGA modes
-  - [Vertical sync (INP &H3DA, WAIT)](#vertical-sync-inp-h3da-wait)
+  - [Vertical sync (INP &H3DA, WAIT, WAIT VSYNC)](#vertical-sync-inp-h3da-wait-wait-vsync)
   - [VGA palette (OUT / INP &H3C7-&H3C9)](#vga-palette-out--inp-h3c7-h3c9)
   - [CGA composite: artifact colors (OUT &H3D8)](#cga-composite-artifact-colors-out-h3d8)
   - [Keyboard (INP &H60, PEEK &H417)](#keyboard-inp-h60-peek-h417)
@@ -418,7 +418,7 @@ Each plane takes `width * height / 8` bytes: 8000 in SCREEN 7, 16000 in SCREEN 8
 (SCREEN 9); the offset selects the page, not `SCREEN ,,apage`. The registers go back to their defaults
 with every `SCREEN`.
 
-### Vertical sync (INP &H3DA, WAIT)
+### Vertical sync (INP &H3DA, WAIT, WAIT VSYNC)
 
 `INP(&H3DA)` returns the VGA status register. Bit 3 (value 8) is set during the vertical retrace, which
 is emulated at 70 Hz as on a real VGA. At the start of each retrace, whatever has been drawn so far is
@@ -430,8 +430,15 @@ WHILE (INP(&H3DA) AND 8) = 0: WEND      ' wait for the next one to start
 ' ...draw here...
 ```
 
-`WAIT &H3DA, 8` does the same in a single statement. While waiting, the program doesn't use CPU
-unnecessarily.
+`WAIT &H3DA, 8` does the same in a single statement, and QBLike adds a more readable alias:
+
+```basic
+WAIT VSYNC                              ' = WAIT &H3DA, 8
+```
+
+`VSYNC` is not a reserved word: programs that have their own `SUB VSync` keep working. The three forms (`INP`,
+`WAIT &H3DA` and `WAIT VSYNC`) use the same 70 Hz clock, so they can be mixed. While waiting, the program
+doesn't use CPU unnecessarily.
 
 ### VGA palette (OUT / INP &H3C7-&H3C9)
 

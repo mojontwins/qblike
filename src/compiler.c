@@ -2674,6 +2674,16 @@ static void compile_statement(void) {
         case KW_POKE: { int si = emit(S_POKE); ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr(); return; }
         case KW_OUT: { int si = emit(S_OUT); ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr(); return; }
         case KW_WAIT: {
+            /* WAIT VSYNC: QBLike alias of WAIT &H3DA, 8 (waits for the next vertical retrace). VSYNC is
+               not a reserved word: "WAIT name" without a comma can't be anything else. */
+            if (cur()->k == TK_ID && qb_stricmp(cur()->s, "VSYNC") == 0) {
+                Tok *n = peekn(1);
+                if (n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE)) {
+                    adv();
+                    emit(S_VSYNC);
+                    return;
+                }
+            }
             int si = emit(S_WAIT);
             ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr();
             if (acceptop(',')) ST(si)->e3 = parse_num_expr();
