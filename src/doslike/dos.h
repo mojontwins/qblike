@@ -42,6 +42,10 @@ void getpal( int index, int* r, int* g, int* b );
 
 int shuttingdown( void );
 void setcrtmode( int enabled ); /* QBLike addition: toggle CRT emulation at run time */
+/* QBLike additions: OPL chip driven by register writes (AdLib/Sound Blaster ports) */
+double dos_clock( void );                            /* monotonic seconds, same clock for the timestamps */
+void dos_opl_write( double time, int reg, int val ); /* reg 0x000-0x1FF, played ~80 ms after 'time' */
+void dos_opl_silence( double time );                 /* key off all channels, reset to OPL2 defaults */
 
 
 void cputs( char const* string );
@@ -2721,7 +2725,141 @@ struct sound_context_t {
     } sound_channels[ SOUND_CHANNELS ];
 };
 
+/* ---- QBLike: live OPL ------------------------------------------------------------------------------
+   Programs write the AdLib registers through emulated ports; each write is queued with a timestamp and
+   applied by the audio callback at the matching sample position, a fixed latency later, so the music
+   keeps a steady rhythm whatever the timing of the interpreter. */
+#include <time.h>
+#include <math.h>
+#define QBL_OPLQ 32768
+static struct { double t; unsigned short reg; unsigned char val; } qbl_oplq[ QBL_OPLQ ];
+static int qbl_oplq_head = 0, qbl_oplq_tail = 0;
+static thread_mutex_t qbl_opl_mutex;
+static int qbl_opl_mutex_ready = 0;
+static volatile int qbl_opl_used = 0;
+static opl_t* qbl_live_opl = NULL;
+static double qbl_block_end = -1.0;
+static FILE* qbl_oplwav = NULL;     /* QBLIKE_OPLWAV=file: also dump the FM output (testing aid) */
+static long qbl_oplwav_frames = 0;
+
+double dos_clock( void ) {
+    struct timespec ts;
+    #ifdef _WIN32
+        timespec_get( &ts, TIME_UTC );                /* precise system time (UCRT) */
+    #else
+        clock_gettime( CLOCK_MONOTONIC, &ts );
+    #endif
+    return (double)( ts.tv_sec % 1000000 ) + ts.tv_nsec / 1e9;
+}
+
+void dos_opl_write( double time, int reg, int val ) {
+    if( !qbl_opl_mutex_ready ) return;
+    thread_mutex_lock( &qbl_opl_mutex );
+    int next = ( qbl_oplq_tail + 1 ) % QBL_OPLQ;
+    if( next != qbl_oplq_head ) {
+        qbl_oplq[ qbl_oplq_tail ].t = time;
+        qbl_oplq[ qbl_oplq_tail ].reg = (unsigned short)( reg & 0x1FF );
+        qbl_oplq[ qbl_oplq_tail ].val = (unsigned char)( val & 0xFF );
+        qbl_oplq_tail = next;
+    }
+    qbl_opl_used = 1;
+    thread_mutex_unlock( &qbl_opl_mutex );
+}
+
+void dos_opl_silence( double time ) {
+    if( !qbl_opl_used ) return;
+    for( int ch = 0; ch < 9; ++ch ) { dos_opl_write( time, 0xB0 + ch, 0 ); dos_opl_write( time, 0x1B0 + ch, 0 ); }
+    dos_opl_write( time, 0xBD, 0 );
+    for( int r = 0x40; r <= 0x55; ++r ) { dos_opl_write( time, r, 0x3F ); dos_opl_write( time, 0x100 + r, 0x3F ); }
+}
+
+static void qbl_wav_header( FILE* f, long frames ) {
+    long data = frames * 4;
+    unsigned char h[ 44 ] = { 'R','I','F','F', 0,0,0,0, 'W','A','V','E', 'f','m','t',' ', 16,0,0,0, 1,0, 2,0,
+        0x44,0xAC,0,0, 0x10,0xB1,0x02,0, 4,0, 16,0, 'd','a','t','a', 0,0,0,0 };
+    long riff = 36 + data;
+    for( int i = 0; i < 4; ++i ) { h[ 4 + i ] = (unsigned char)( riff >> ( 8 * i ) ); h[ 40 + i ] = (unsigned char)( data >> ( 8 * i ) ); }
+    fseek( f, 0, SEEK_SET );
+    fwrite( h, 1, 44, f );
+    fseek( f, 0, SEEK_END );
+    fflush( f );
+}
+
+static void qbl_live_opl_render( APP_S16* out, int count ) {
+    if( !qbl_opl_used || !qbl_opl_mutex_ready || count <= 0 ) return;
+    if( !qbl_live_opl ) {
+        qbl_live_opl = opl_create();
+        if( !qbl_live_opl ) return;
+        /* back to a plain AdLib: OPL2 mode, every register cleared */
+        unsigned short r[ 2 ]; unsigned char d[ 2 ] = { 0, 0 };
+        r[ 0 ] = 0x105; r[ 1 ] = 0x104; opl_write( qbl_live_opl, 2, r, d );
+        for( int i = 0x01; i <= 0xF5; ++i ) { if( i == 0x04 ) continue; r[ 0 ] = (unsigned short) i; r[ 1 ] = (unsigned short)( 0x100 + i ); opl_write( qbl_live_opl, 2, r, d ); }
+        char const* wav = getenv( "QBLIKE_OPLWAV" );
+        if( wav && *wav ) { qbl_oplwav = fopen( wav, "wb" ); if( qbl_oplwav ) qbl_wav_header( qbl_oplwav, 0 ); }
+    }
+    /* the OPL core makes one sample per chip clock / 288 (49716 Hz): render at that rate and
+       resample to the 44100 Hz output, otherwise pitch and envelopes come out 11% slow */
+    static short buf[ SOUND_BUFFER_SIZE * 10 ];
+    static short nbuf[ SOUND_BUFFER_SIZE * 14 ];
+    static double ph = 0.0;                       /* position of the next output sample, in native samples after carry */
+    static short carry[ 2 ] = { 0, 0 };
+    static struct { int at; unsigned short reg; unsigned char val; } due[ 8192 ];
+    const double nrate = 14318180.0 / 288.0;
+    const double ratio = nrate / 44100.0;
+    if( count > SOUND_BUFFER_SIZE * 5 ) count = SOUND_BUFFER_SIZE * 5;
+    const double latency = 0.08;
+    double now = dos_clock();
+    double bstart = qbl_block_end;
+    if( bstart < 0.0 || fabs( bstart - ( now - latency ) ) > 0.06 ) bstart = now - latency;   /* (re)synchronise */
+    double bend = bstart + count / 44100.0;
+    int m = (int)floor( ph + ( count - 1 ) * ratio ) + 1;   /* new native samples needed (index 1..m) */
+    int ndue = 0;
+    thread_mutex_lock( &qbl_opl_mutex );
+    while( qbl_oplq_head != qbl_oplq_tail && ndue < 8192 ) {
+        if( qbl_oplq[ qbl_oplq_head ].t >= bend ) break;
+        double t = qbl_oplq[ qbl_oplq_head ].t;
+        int at = t <= bstart ? 0 : (int)( ( t - bstart ) * nrate );
+        if( at > m ) at = m;
+        due[ ndue ].at = at; due[ ndue ].reg = qbl_oplq[ qbl_oplq_head ].reg; due[ ndue ].val = qbl_oplq[ qbl_oplq_head ].val;
+        ++ndue;
+        qbl_oplq_head = ( qbl_oplq_head + 1 ) % QBL_OPLQ;
+    }
+    thread_mutex_unlock( &qbl_opl_mutex );
+    nbuf[ 0 ] = carry[ 0 ]; nbuf[ 1 ] = carry[ 1 ];
+    short* nb = nbuf + 2;
+    int pos = 0;
+    for( int i = 0; i < ndue; ++i ) {
+        if( due[ i ].at > pos ) { opl_render( qbl_live_opl, nb + pos * 2, due[ i ].at - pos, 1.0f ); pos = due[ i ].at; }
+        opl_write( qbl_live_opl, 1, &due[ i ].reg, &due[ i ].val );
+    }
+    if( pos < m ) opl_render( qbl_live_opl, nb + pos * 2, m - pos, 1.0f );
+    for( int j = 0; j < count; ++j ) {
+        double p = ph + j * ratio;
+        int i0 = (int)p; double f = p - i0;
+        if( i0 >= m ) { i0 = m - 1; f = 1.0; }
+        for( int c = 0; c < 2; ++c ) {
+            double a = nbuf[ i0 * 2 + c ], b = nbuf[ ( i0 + 1 ) * 2 + c ];
+            buf[ j * 2 + c ] = (short)( a + ( b - a ) * f );
+        }
+    }
+    ph = ph + count * ratio - m;
+    if( ph < 0.0 ) ph = 0.0;
+    carry[ 0 ] = nbuf[ m * 2 ]; carry[ 1 ] = nbuf[ m * 2 + 1 ];
+    qbl_block_end = bend;
+    for( int i = 0; i < count * 2; ++i ) {
+        int v = out[ i ] + buf[ i ];
+        out[ i ] = (APP_S16)( v > 32700 ? 32700 : v < -32700 ? -32700 : v );
+    }
+    if( qbl_oplwav ) {
+        fwrite( buf, sizeof( short ), (size_t)( count * 2 ), qbl_oplwav );
+        qbl_oplwav_frames += count;
+        if( ( qbl_oplwav_frames / count ) % 20 == 0 ) qbl_wav_header( qbl_oplwav, qbl_oplwav_frames );
+    }
+}
+
 static void app_sound_callback( APP_S16* sample_pairs, int sample_pairs_count, void* user_data ) {
+    APP_S16* qbl_out0 = sample_pairs;
+    int qbl_count0 = sample_pairs_count;
     struct sound_context_t* context = (struct sound_context_t*) user_data;
     static float mixbuffer[ SOUND_BUFFER_SIZE * 10 ];
     static short modbuffer[ SOUND_BUFFER_SIZE * 10 ];
@@ -2970,6 +3108,8 @@ static void app_sound_callback( APP_S16* sample_pairs, int sample_pairs_count, v
     }
     context->commands_count = 0;
 
+    qbl_live_opl_render( qbl_out0, qbl_count0 );   /* QBLike: FM written through the AdLib ports */
+
     thread_mutex_unlock( &context->mutex );
 }
 
@@ -3144,6 +3284,7 @@ static int app_proc( app_t* app, void* user_data ) {
     struct sound_context_t sound_context;
     memset( &sound_context, 0, sizeof( sound_context ) );
     thread_mutex_init( &sound_context.mutex );
+    thread_mutex_init( &qbl_opl_mutex ); qbl_opl_mutex_ready = 1;   /* QBLike: live OPL queue */
     sound_context.opl = opl_create();
     sound_context.commands_count = 0;
     sound_context.current_music = NULL;

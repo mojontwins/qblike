@@ -136,6 +136,9 @@ video memory of SCREEN 13, of the planar EGA/VGA modes (one file per plane, with
 and of the CGA and text modes.
 
 `PEEK(&H417)` (Shift/Ctrl/Alt state) and `PEEK(&H46C)` (clock ticks) are also supported.
+
+The AdLib / Sound Blaster FM chip is emulated on its ports (`OUT &H388`/`&H389`, `INP(&H388)` with
+working timers), so FM music players written for QuickBASIC, such as Bisqwit's S3M player, run unchanged.
 The `examples` folder includes `NAVES.BAS`, a complete game that uses all of this.
 
 ### Options
@@ -194,20 +197,18 @@ No build system is needed: it compiles with a single compiler command.
 Changes to dos-like: `setcrtmode()` to turn the CRT effect on or off at run time, Alt+Enter for
 fullscreen, mouse position also without CRT and outside the window, pointer kept inside the picture in fullscreen, on Windows preventing Alt/F10 from
 activating the window's system menu (which blocked the keyboard), handling `SIGTERM`/Ctrl+C on Linux
-(`SDL_QUIT`), and a 64 MB stack for the program thread (deep SUB/FUNCTION recursion). It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
+(`SDL_QUIT`), a 64 MB stack for the program thread (deep SUB/FUNCTION recursion), and a timestamped OPL write queue (`dos_opl_write`) mixed with the rest of the audio. It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
 (QBLike draws its own mouse cursor, like the DOS driver: an arrow in graphics modes, an inverted block in
 text mode).
 
 ### Known limitations
 
 - The interface and messages are in English, like the original QBasic.
-- Not implemented: `CHAIN`, `CALL ABSOLUTE`/`INTERRUPT`, `ON PLAY`/`ON COM`/`ON PEN`/`ON STRIG`,
-  `ON KEY` (accepted but never fires), the `X` command of `PLAY`/`DRAW` with `VARPTR$`, the split view
-  (*View > Split*) and printing. `LPRINT` output is discarded.
+- Not implemented: `CHAIN`, `CALL ABSOLUTE`/`INTERRUPT`, `ON COM`/`ON PEN`/`ON STRIG`,
+  `ON KEY` (accepted but never fires), the split view (*View > Split*) and printing. `LPRINT` output is discarded.
 - `PEEK`/`POKE` only work on video memory and the BIOS areas listed. `VARPTR` and `VARSEG` return 0,
-  except in the `BLOAD`/`BSAVE file$, VARPTR(array(i))` form.
+  except in the `BLOAD`/`BSAVE file$, VARPTR(array(i))` form; `VARPTR$` works inside `PLAY` and `DRAW`.
 - The mouse wheel is not available (dos-like does not expose it).
-- Background music (`PLAY "MB..."`) is queued approximately.
 
 ### License
 
@@ -348,6 +349,10 @@ memoria de vídeo de SCREEN 13, de los modos EGA/VGA planares (un archivo por pl
 `OUT &H3C4`/`&H3C5`) y de los modos CGA y de texto.
 
 También se admiten `PEEK(&H417)` (estado de Mayús/Ctrl/Alt) y `PEEK(&H46C)` (ticks del reloj).
+
+El chip FM de AdLib / Sound Blaster está emulado en sus puertos (`OUT &H388`/`&H389`, `INP(&H388)` con
+temporizadores), así que los reproductores de música FM escritos para QuickBASIC, como el reproductor de
+S3M de Bisqwit, funcionan sin cambios.
 La carpeta `examples` incluye `NAVES.BAS`, un juego completo que usa todo esto.
 
 ### Opciones
@@ -406,20 +411,19 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 
 Cambios en dos-like: `setcrtmode()` para activar o desactivar el efecto CRT en tiempo de ejecución,
 Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera de la ventana, puntero confinado a la imagen en pantalla completa, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
-(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) y una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION). Se compila con `DISABLE_SCREEN_FRAME`
+(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION) y una cola de escrituras al OPL con marca de tiempo (`dos_opl_write`) que se mezcla con el resto del audio. Se compila con `DISABLE_SCREEN_FRAME`
 (sin el marco del monitor) y `DISABLE_SYSTEM_CURSOR` (QBLike dibuja su propio cursor de ratón, como el
 controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 
 ### Limitaciones conocidas
 
 - La interfaz y los mensajes están en inglés, como el QBasic original.
-- No implementados: `CHAIN`, `CALL ABSOLUTE`/`INTERRUPT`, `ON PLAY`/`ON COM`/`ON PEN`/`ON STRIG`,
-  `ON KEY` (se acepta pero no se dispara), el comando `X` de `PLAY`/`DRAW` con `VARPTR$`, la vista
-  dividida (*View > Split*) y la impresión. `LPRINT` se descarta.
+- No implementados: `CHAIN`, `CALL ABSOLUTE`/`INTERRUPT`, `ON COM`/`ON PEN`/`ON STRIG`,
+  `ON KEY` (se acepta pero no se dispara), la vista dividida (*View > Split*) y la impresión. `LPRINT` se descarta.
 - `PEEK`/`POKE` solo funcionan sobre la memoria de vídeo y las zonas de la BIOS indicadas. `VARPTR` y
-  `VARSEG` devuelven 0, salvo en la forma `BLOAD`/`BSAVE archivo$, VARPTR(array(i))`.
+  `VARSEG` devuelven 0, salvo en la forma `BLOAD`/`BSAVE archivo$, VARPTR(array(i))`; `VARPTR$` funciona
+  dentro de `PLAY` y `DRAW`.
 - La rueda del ratón no está disponible (dos-like no la expone).
-- La música en segundo plano (`PLAY "MB..."`) se encola de forma aproximada.
 
 ### Licencia
 

@@ -29,6 +29,7 @@ The only behavior difference from QBasic is that `PUT` clips the image instead o
   - [VGA palette (OUT / INP &H3C7-&H3C9)](#vga-palette-out--inp-h3c7-h3c9)
   - [CGA composite: artifact colors (OUT &H3D8)](#cga-composite-artifact-colors-out-h3d8)
   - [Keyboard (INP &H60, PEEK &H417)](#keyboard-inp-h60-peek-h417)
+  - [AdLib / Sound Blaster FM (OUT / INP &H388)](#adlib--sound-blaster-fm-out--inp-h388)
   - [BIOS clock (PEEK &H46C)](#bios-clock-peek-h46c)
   - [BLOAD / BSAVE](#bload--bsave)
 - [Key code table](#key-code-table)
@@ -515,6 +516,38 @@ Without burst, `OUT &H3D9, color` (0-15) changes the color of the lit pixels in 
   bit 2 Ctrl, bit 3 Alt.
 
 To read several keys at once, [MULTIKEY](#multikey) is more convenient.
+
+### AdLib / Sound Blaster FM (OUT / INP &H388)
+
+QBLike emulates the Yamaha OPL FM synthesizer of AdLib and Sound Blaster cards (through dos-like's
+OPL3 emulator), so programs that played FM music by writing to the card's ports work unchanged,
+for example Bisqwit's S3M player for QuickBASIC (`fm.inc`).
+
+| Ports | Use |
+|---|---|
+| `OUT &H388, reg` / `OUT &H389, value` | select an OPL register and write it (also `&H220/&H221` and `&H228/&H229`) |
+| `OUT &H38A, reg` / `OUT &H38B, value` | second OPL3 register bank (also `&H222/&H223`) |
+| `INP(&H388)` | status register: the two timers (registers 2, 3 and 4) work, so the classic AdLib detection routine finds the card |
+
+```
+SUB FMwrite (reg%, value%)
+    OUT &H388, reg%: x% = INP(&H388)     ' the INP reads are the delay real cards needed
+    OUT &H389, value%: x% = INP(&H388)
+END SUB
+
+FMwrite &H20, &H01: FMwrite &H40, &H10: FMwrite &H60, &HF0: FMwrite &H80, &H77
+FMwrite &HA0, &H98: FMwrite &HB0, &H31   ' key on: a 440 Hz-ish tone on channel 0
+```
+
+Writes are played with a fixed latency of about 80 ms, so the rhythm is kept exactly even if the
+program is momentarily busy. The FM voices are silenced when the program ends. The MPU-401 (MIDI) ports
+`&H330/&H331` are not emulated: reading them returns `&HFF`, so detection routines report that there is
+no MIDI interface instead of hanging.
+
+`examples/ADLIB.BAS` is a complete example (detection, an instrument and a two-voice tune).
+
+These players usually take their timing from `ON PLAY(n) GOSUB` and `PLAY "MB..."` with `VARPTR$`;
+QBLike implements all of it as QBasic does (a real background music queue of up to 32 notes).
 
 ### BIOS clock (PEEK &H46C)
 

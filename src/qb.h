@@ -73,6 +73,7 @@ typedef struct Array {
     Value *v;
     uint8_t dynamic;    /* REDIM-able */
     uint8_t alive;      /* dimensioned */
+    uint8_t prealloc;   /* static array allocated at program start (constant bounds) */
 } Array;
 
 /* ------------------------------------------------------------------ */
@@ -286,7 +287,7 @@ enum {
     S_PCOPY, S_POKE, S_DEFSEG, S_OUT, S_WAIT, S_MIDSTMT, S_LSET, S_RSET, S_STOP,
     S_SYSTEM, S_CLEAR, S_SELECT, S_CASE, S_EXITPROC, S_LETFUNC, S_TRON, S_TROFF,
     S_KEY, S_ONTIMER, S_TIMERCTL, S_ONKEY, S_KEYCTL, S_RUN, S_SHELL, S_LPRINT,
-    S_FIELD, S_FNRET, S_ONPLAY, S_RESET, S_CHAIN, S_LOCK, S_ENVIRON, S_BLOAD, S_BSAVE, S_LOADIMG, S_LOADPAL, S_CLIP, S_MOUSE, S_FILL, S_VSYNC,
+    S_FIELD, S_FNRET, S_ONPLAY, S_RESET, S_CHAIN, S_LOCK, S_ENVIRON, S_BLOAD, S_BSAVE, S_LOADIMG, S_LOADPAL, S_CLIP, S_MOUSE, S_FILL, S_VSYNC, S_PLAYCTL,
     S_COUNT
 };
 
@@ -349,6 +350,7 @@ typedef struct RunState {
     int breakreq;
     int stopped;
     int ontimer, timeron;
+    int onplay, playlimit, playon, playpending, playlast;   /* ON PLAY(n) GOSUB */
     double timerint, timernext;
     int inevent;
     int onkey[32], keyon[32];
@@ -462,6 +464,11 @@ void snd_init(void);
 void snd_beep(void);
 void snd_sound(double freq, double ticks);
 void snd_play(const char *s, int len);
+int  snd_queue_count(void);   /* notes in the background music queue (playing or waiting) */
+double qb_varptr_num(const char *tok);
+void qb_varptr_str(const char *tok, const char **s, int *len);
+void snd_poll(void);          /* start queued background sounds that are due */
+void opl_ports_reset(void);   /* AdLib ports: reset timers, key off all FM voices */
 int  snd_playfn(void);
 void snd_stop(void);
 void snd_reset(void);

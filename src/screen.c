@@ -231,6 +231,43 @@ static void clear_text_rows(int page, int top, int bot) {
 static int vga_seq_idx = 0, vga_map_mask = 0x0F;   /* &H3C4/&H3C5, index 2 = map mask (planes written) */
 static int vga_gc_idx = 0, vga_read_map = 0;       /* &H3CE/&H3CF, index 4 = read map select (plane read) */
 
+/* emulated AdLib / Sound Blaster FM (OPL) ports: register writes go to the OPL emulation in dos-like;
+   the status register emulates the two timers so that the usual AdLib detection succeeds */
+static int opl_index[2] = { 0, 0x100 };
+static int opl_t1_val = 0, opl_t2_val = 0, opl_t1_run = 0, opl_t2_run = 0, opl_t1_mask = 0, opl_t2_mask = 0;
+static int opl_flags = 0, opl_reads = 0;
+static double opl_t1_start = 0, opl_t2_start = 0;
+void opl_ports_reset(void) {
+    opl_index[0] = 0; opl_index[1] = 0x100;
+    opl_t1_val = opl_t2_val = opl_t1_run = opl_t2_run = opl_t1_mask = opl_t2_mask = 0;
+    opl_flags = opl_reads = 0;
+    dos_opl_silence(dos_clock());
+}
+static void opl_data(int reg, int v) {
+    double now = dos_clock();
+    if (reg == 2) opl_t1_val = v;
+    else if (reg == 3) opl_t2_val = v;
+    else if (reg == 4) {
+        if (v & 0x80) opl_flags = 0;                         /* IRQ reset: clear the status flags */
+        else {
+            opl_t1_mask = (v >> 6) & 1; opl_t2_mask = (v >> 5) & 1;
+            if ((v & 1) && !opl_t1_run) { opl_t1_start = now; opl_reads = 0; }
+            if ((v & 2) && !opl_t2_run) { opl_t2_start = now; opl_reads = 0; }
+            opl_t1_run = v & 1; opl_t2_run = (v >> 1) & 1;
+        }
+    }
+    dos_opl_write(now, reg, v);
+}
+static int opl_status(void) {
+    /* time spent since the timer started; each status read also counts as a few microseconds,
+       like the I/O delay of a real ISA card (programs poll the port to wait) */
+    double now = dos_clock();
+    opl_reads++;
+    if (opl_t1_run && !opl_t1_mask && (now - opl_t1_start) + opl_reads * 100e-6 >= 80e-6 * (256 - opl_t1_val)) opl_flags |= 0xC0;
+    if (opl_t2_run && !opl_t2_mask && (now - opl_t2_start) + opl_reads * 100e-6 >= 320e-6 * (256 - opl_t2_val)) opl_flags |= 0xA0;
+    return opl_flags;
+}
+
 /* emulated CGA registers */
 static int cga_mode_reg = 0x1E;     /* &H3D8 mode control; bit 2 = black & white (color burst off) */
 static int cga_color_reg = 0x0F;    /* &H3D9 color select; in SCREEN 2, bits 0-3 = foreground color */
@@ -306,6 +343,7 @@ void scr_init(void) {
 }
 void scr_reset(void) {
     g_mouse_cursor = 0;
+    opl_ports_reset();
     /* QBasic keeps the output screen between runs but resets mode to text */
     if (S.mode != 0 || S.cols != 80 || S.rows != 25) setup_mode(0, 80, 25);
     S.fg = 7; S.bg = 0;
@@ -703,6 +741,7 @@ static void present_program(void) {
 }
 
 void scr_present(int force) {
+    snd_poll();                     /* background notes keep starting during INPUT, SLEEP, etc. */
     double t = sys_time();
     if (!force && t - last_present < 0.012) return;
     last_present = t;
@@ -1454,11 +1493,15 @@ static int draw_num(const char *s, int len, int *i, int *ok) {
     int neg = 0, v = 0, any = 0;
     if (*i < len && (s[*i] == '-' || s[*i] == '+')) { neg = s[*i] == '-'; (*i)++; }
     if (*i < len && s[*i] == '=') {
-        /* =VARPTR$(var); not supported */
-        while (*i < len && s[*i] != ';') (*i)++;
-        if (*i < len) (*i)++;
-        *ok = 0;
-        return 0;
+        /* =VARPTR$(var) */
+        (*i)++;
+        if (*i + 3 > len) rt_error(5);
+        double d = qb_varptr_num(s + *i);
+        *i += 3;
+        if (*i < len && s[*i] == ';') (*i)++;
+        *ok = 1;
+        d = floor(d + 0.5);
+        return neg ? -(int)d : (int)d;
     }
     while (*i < len && s[*i] >= '0' && s[*i] <= '9') { v = v * 10 + (s[*i] - '0'); (*i)++; any = 1; }
     *ok = any;
@@ -1528,8 +1571,16 @@ void gfx_draw(const char *s, int len) {
                 break;
             }
             case 'X': {
-                /* X + VARPTR$(string): unsupported */
-                while (i < len && s[i] != ';') i++;
+                /* X + VARPTR$(string$): run the string as a sub-command */
+                if (i + 3 > len) rt_error(5);
+                const char *ss; int sl;
+                qb_varptr_str(s + i, &ss, &sl);
+                i += 3;
+                if (i < len && s[i] == ';') i++;
+                char *cp = malloc((size_t)sl + 1);
+                memcpy(cp, ss, (size_t)sl);
+                gfx_draw(cp, sl);
+                free(cp);
                 break;
             }
             default:
@@ -1883,6 +1934,10 @@ void gfx_out(int port, int v) {
         if (++S.dac_write_comp == 3) { S.dac_write_comp = 0; S.dac_write_idx = (S.dac_write_idx + 1) & 255; }
         return;
     }
+    if (port == 0x388 || port == 0x220 || port == 0x228) { opl_index[0] = v & 0xFF; return; }
+    if (port == 0x38A || port == 0x222) { opl_index[1] = 0x100 | (v & 0xFF); return; }
+    if (port == 0x389 || port == 0x221 || port == 0x229) { opl_data(opl_index[0], v & 0xFF); return; }
+    if (port == 0x38B || port == 0x223) { opl_data(opl_index[1], v & 0xFF); return; }
     if (port == 0x3D8) { cga_mode_reg = v & 0xFF; return; }
     if (port == 0x3D9) {
         cga_color_reg = v & 0xFF;
@@ -1919,6 +1974,8 @@ static int vsync_status(void) {
 int gfx_inp(int port) {
     if (port == 0x3DA || port == 0x3BA) return vsync_status();
     if (port == 0x60) return kb_lastscan();
+    if (port == 0x388 || port == 0x220 || port == 0x228 || port == 0x38A || port == 0x222) return opl_status();
+    if (port == 0x330 || port == 0x331) return 0xFF;    /* no MPU-401: floating bus, so detection gives up */
     if (port == 0x3D8) return cga_mode_reg;
     if (port == 0x3D9) return cga_color_reg;
     if (port == 0x3C4) return vga_seq_idx;

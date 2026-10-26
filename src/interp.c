@@ -256,6 +256,26 @@ static double to_int_check(double d, int t) {
     return d;
 }
 
+/* VARPTR$ table */
+#define VPN 1024
+static Value *vp_tab[VPN];
+static int vp_next = 0;
+static Value *vp_get(const char *tok) {
+    int k = (unsigned char)tok[1] | ((unsigned char)tok[2] << 8);
+    if (k >= VPN || !vp_tab[k]) rt_error(5);
+    return vp_tab[k];
+}
+double qb_varptr_num(const char *tok) {
+    Value *v = vp_get(tok);
+    if (v->t == T_STR) rt_error(13);
+    return v->n;
+}
+void qb_varptr_str(const char *tok, const char **s, int *len) {
+    Value *v = vp_get(tok);
+    if (v->t != T_STR) rt_error(13);
+    *s = v->s; *len = v->slen;
+}
+
 static double call_function(Expr *e);
 static double builtin_num(Expr *e);
 static void builtin_str(Expr *e, char **p, int *len);
@@ -871,7 +891,20 @@ static void builtin_str(Expr *e, char **p, int *len) {
             ret_str(p, len, (char *)b, n);
             return;
         }
-        case F_VARPTRS: ret_str(p, len, "\0\0\0", 3); return;
+        case F_VARPTRS: {
+            /* QBasic returns type byte + 2-byte address; here the "address" indexes a table of
+               variables that PLAY and DRAW resolve with qb_varptr_num / qb_varptr_str */
+            Expr *a = e->args[0];
+            Value *v = lval(a);
+            int k = vp_next; vp_next = (vp_next + 1) % VPN;
+            vp_tab[k] = v;
+            int t = v->t;
+            char b[3];
+            b[0] = (char)(t == T_INT ? 2 : t == T_LNG ? 20 : t == T_SNG ? 4 : t == T_DBL ? 8 : 3);
+            b[1] = (char)(k & 0xFF); b[2] = (char)(k >> 8);
+            ret_str(p, len, b, 3);
+            return;
+        }
         case F_ERDEV: ret_str(p, len, "", 0); return;
         case F_IOCTL: ret_str(p, len, "", 0); return;
         case F_SPC: case F_TAB: ret_str(p, len, "", 0); return;
@@ -1229,7 +1262,19 @@ static void do_gosub_event(int target) {
 }
 
 static void check_events(void) {
+    snd_poll();
     if (rs->inevent) return;
+    if (rs->onplay >= 0 && rs->playon) {
+        /* ON PLAY(n): the background queue has just dropped below n notes (PLAY STOP remembers it) */
+        int c = snd_queue_count();
+        if (c < rs->playlimit && rs->playlast >= rs->playlimit) rs->playpending = 1;
+        rs->playlast = c;
+        if (rs->playpending && rs->playon == 1) {
+            rs->playpending = 0;
+            do_gosub_event(rs->onplay);
+            rs->playlast = snd_queue_count();
+        }
+    }
     if (rs->ontimer >= 0 && rs->timeron == 1) {
         double t = sys_timer();
         if (t >= rs->timernext || t + 86400 - rs->timernext < 1.0e-9) {
@@ -1498,7 +1543,10 @@ static int exec(Frame *f, int pc) {
                     lb[i] = l ? (int)qb_round_even(evn(l)) : rs->optionbase;
                     ub[i] = (int)qb_round_even(evn(u));
                 }
-                if (s->op == S_DIM && a->alive) rt_error(10);
+                if (s->op == S_DIM && a->alive) {
+                    if (a->prealloc) { pc++; break; }   /* static array, allocated at program start */
+                    rt_error(10);
+                }
                 array_dim(a, s->i3, lb, ub, s->op == S_REDIM && s->i4);
                 a->dynamic = 1;
                 pc++;
@@ -1963,6 +2011,21 @@ static int exec(Frame *f, int pc) {
                 pc++;
                 break;
             }
+            case S_ONPLAY: {
+                double n = evn(s->e1);
+                if (n < 1 || n > 32) rt_error(5);
+                rs->onplay = s->i1;
+                rs->playlimit = (int)n;
+                rs->playlast = snd_queue_count();
+                pc++;
+                break;
+            }
+            case S_PLAYCTL:
+                rs->playon = s->i1;
+                if (s->i1 == 0) rs->playpending = 0;
+                rs->playlast = snd_queue_count();
+                pc++;
+                break;
             case S_TIMERCTL:
                 rs->timeron = s->i1;
                 if (s->i1 == 1) rs->timernext = sys_timer() + rs->timerint;
@@ -2049,6 +2112,41 @@ void rt_free(void) {
     val_free(&g_fnret);
 }
 
+/* As in QBasic, module-level arrays dimensioned with constant bounds are static: they exist from the
+   start of the program, even if their DIM is placed where the flow never goes (e.g. after END, as in
+   code appended from include files). */
+static int const_bound(Expr *e) {
+    if (!e) return 1;
+    if (e->op == E_NUM) return 1;
+    if (e->op == E_NEG && e->a && e->a->op == E_NUM) return 1;
+    return 0;
+}
+static void prealloc_static_arrays(Program *p) {
+    int ob = 0;
+    for (int i = 0; i < p->ncode; i++) {
+        Stmt *s = &p->code[i];
+        if (s->part != 0) continue;
+        if (s->op == S_NOP && s->i1 == 999) ob = s->i2;
+        if (s->op != S_DIM || s->i3 <= 0 || s->i1 != 0) continue;
+        int ok = 1;
+        for (int k = 0; k < s->i3 * 2; k++) if (!const_bound(s->args[k])) ok = 0;
+        if (!ok) continue;
+        int lb[8], ub[8];
+        for (int k = 0; k < s->i3; k++) {
+            Expr *l = s->args[k * 2], *u = s->args[k * 2 + 1];
+            lb[k] = l ? (int)qb_round_even(evn(l)) : ob;
+            ub[k] = (int)qb_round_even(evn(u));
+            if (ub[k] < lb[k]) ok = 0;
+        }
+        if (!ok) continue;
+        Array *a = arr_slot(0, s->i2);
+        if (a->alive) continue;
+        array_dim(a, s->i3, lb, ub, 0);
+        a->prealloc = 1;
+        a->dynamic = 0;
+    }
+}
+
 void rt_reset(Program *p) {
     rs = &rs_storage;
     rt_free();
@@ -2056,6 +2154,7 @@ void rt_reset(Program *p) {
     rs->prog = p;
     rs->onerror = -1;
     rs->ontimer = -1;
+    rs->onplay = -1;
     rs->optionbase = 0;
     rnd_seed = 0x50000;
     rnd_last = 0;
@@ -2067,6 +2166,7 @@ void rt_reset(Program *p) {
         }
         rs->global = frame_new_global();
         rs->cur = rs->global;
+        prealloc_static_arrays(p);
     }
 }
 

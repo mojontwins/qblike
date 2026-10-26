@@ -1801,7 +1801,20 @@ static void compile_on(void) {
         add_fix(si, 1, 0, lab, 1);
         return;
     }
-    if (acceptkw(KW_PLAY) || acceptkw(KW_PEN) || acceptkw(KW_STRIG) || acceptkw(KW_COM) || acceptkw(KW_UEVENT)) {
+    if (acceptkw(KW_PLAY)) {
+        /* ON PLAY(n) GOSUB label: when the background music queue drops below n notes */
+        expectop('(');
+        Expr *n = parse_num_expr();
+        expectop(')');
+        expectkw(KW_GOSUB);
+        int si = emit(S_ONPLAY);
+        ST(si)->e1 = n;
+        char lab[48];
+        read_label(lab, sizeof lab);
+        add_fix(si, 1, 0, lab, 1);
+        return;
+    }
+    if (acceptkw(KW_PEN) || acceptkw(KW_STRIG) || acceptkw(KW_COM) || acceptkw(KW_UEVENT)) {
         /* event traps that we do not support: parse and ignore */
         if (acceptop('(')) { Expr *x = parse_expr(); free_expr(x); expectop(')'); }
         expectkw(KW_GOSUB);
@@ -2636,7 +2649,12 @@ static void compile_statement(void) {
         case KW_BEEP: emit(S_BEEP); return;
         case KW_SOUND: { int si = emit(S_SOUND); ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr(); return; }
         case KW_PLAY: {
-            if (iskw(KW_ON) || iskw(KW_OFF) || iskw(KW_STOP)) { adv(); return; }
+            if (iskw(KW_ON) || iskw(KW_OFF) || iskw(KW_STOP)) {
+                int si = emit(S_PLAYCTL);
+                ST(si)->i1 = iskw(KW_ON) ? 1 : iskw(KW_OFF) ? 0 : 2;
+                adv();
+                return;
+            }
             int si = emit(S_PLAY); ST(si)->e1 = parse_str_expr(); return;
         }
         case KW_SLEEP: { int si = emit(S_SLEEP); if (!at_stmt_end()) ST(si)->e1 = parse_num_expr(); return; }

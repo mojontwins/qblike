@@ -28,6 +28,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [Paleta VGA (OUT / INP &H3C7-&H3C9)](#paleta-vga-out--inp-h3c7-h3c9)
   - [CGA compuesto: colores por artefacto (OUT &H3D8)](#cga-compuesto-colores-por-artefacto-out-h3d8)
   - [Teclado (INP &H60, PEEK &H417)](#teclado-inp-h60-peek-h417)
+  - [AdLib / Sound Blaster FM (OUT / INP &H388)](#adlib--sound-blaster-fm-out--inp-h388)
   - [Reloj de la BIOS (PEEK &H46C)](#reloj-de-la-bios-peek-h46c)
   - [BLOAD / BSAVE](#bload--bsave)
 - [Tabla de códigos de tecla](#tabla-de-códigos-de-tecla)
@@ -515,6 +516,38 @@ Sin burst, `OUT &H3D9, color` (0-15) cambia el color de los píxeles encendidos 
   bit 1 Mayús izquierda, bit 2 Ctrl, bit 3 Alt.
 
 Para leer varias teclas a la vez es más cómodo [MULTIKEY](#multikey).
+
+### AdLib / Sound Blaster FM (OUT / INP &H388)
+
+QBLike emula el sintetizador FM Yamaha OPL de las tarjetas AdLib y Sound Blaster (mediante el emulador
+OPL3 de dos-like), así que los programas que tocaban música FM escribiendo en los puertos de la tarjeta
+funcionan sin cambios, por ejemplo el reproductor de S3M para QuickBASIC de Bisqwit (`fm.inc`).
+
+| Puertos | Uso |
+|---|---|
+| `OUT &H388, reg` / `OUT &H389, valor` | selecciona un registro del OPL y lo escribe (también `&H220/&H221` y `&H228/&H229`) |
+| `OUT &H38A, reg` / `OUT &H38B, valor` | segundo banco de registros del OPL3 (también `&H222/&H223`) |
+| `INP(&H388)` | registro de estado: los dos temporizadores (registros 2, 3 y 4) funcionan, así que la rutina clásica de detección de AdLib encuentra la tarjeta |
+
+```
+SUB FMwrite (reg%, valor%)
+    OUT &H388, reg%: x% = INP(&H388)     ' las lecturas INP son la espera que necesitaban las tarjetas reales
+    OUT &H389, valor%: x% = INP(&H388)
+END SUB
+
+FMwrite &H20, &H01: FMwrite &H40, &H10: FMwrite &H60, &HF0: FMwrite &H80, &H77
+FMwrite &HA0, &H98: FMwrite &HB0, &H31   ' nota: un tono de unos 440 Hz en el canal 0
+```
+
+Las escrituras suenan con una latencia fija de unos 80 ms, de modo que el ritmo se mantiene exacto aunque
+el programa esté ocupado un momento. Las voces FM se silencian al terminar el programa. Los puertos del
+MPU-401 (MIDI) `&H330/&H331` no se emulan: al leerlos se obtiene `&HFF`, así que las rutinas de detección
+informan de que no hay interfaz MIDI en lugar de quedarse colgadas.
+
+`examples/ADLIB.BAS` es un ejemplo completo (detección, un instrumento y una melodía a dos voces).
+
+Estos reproductores suelen sacar el ritmo de `ON PLAY(n) GOSUB` y `PLAY "MB..."` con `VARPTR$`; QBLike lo
+implementa todo como QBasic (una cola de música en segundo plano real, de hasta 32 notas).
 
 ### Reloj de la BIOS (PEEK &H46C)
 

@@ -1832,6 +1832,7 @@ static void start_program(int step) {
         running = 0;
         suspended = 0;
         snd_stop();
+        opl_ports_reset();
         if (st == RUN_RESTART) {
             step = restart_step;
             restart_step = 0;
