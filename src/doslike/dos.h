@@ -125,6 +125,7 @@ void playmusic( struct music_t* music, int loop, int volume );
 void stopmusic( void );
 int musicplaying( void );
 void musicvolume( int volume );
+struct music_t* qbl_loadmid_opl( char const* filename );   /* QBLike */
 
 enum soundmode_t {
     soundmode_8bit_mono_5000,
@@ -1901,6 +1902,16 @@ struct music_t* loadmid( char const* filename ) {
 }
 
 
+/* QBLike: MIDI played on the OPL (no soundfont loaded or selected) */
+struct music_t* qbl_loadmid_opl( char const* filename ) {
+    tml_message* mid = tml_load_filename( filename );
+    if( !mid ) return NULL;
+    struct music_t* music = ( (struct music_t*)mid ) - 1;
+    music->format = MUSIC_FORMAT_MID;
+    return music;
+}
+
+
 struct music_t* loadmus( char const* filename ) {
     load_default_sf2();
     FILE* fp = fopen( filename, "rb" );
@@ -2413,6 +2424,8 @@ tml_message* render_mid_opl( struct music_t* mid, tml_message* next, double* mse
                 next = (tml_message*)( mid + 1 );
                 (*msec) = 0.0;
             } else {
+                int rest = SampleCount - SampleBlock;   /* QBLike: silence the rest of the block */
+                if( rest > 0 ) memset( sample_pairs + SampleBlock * 2, 0, (size_t)rest * 2 * sizeof( APP_S16 ) );
                 return NULL;
             }
         }
@@ -2739,7 +2752,7 @@ static int qbl_opl_mutex_ready = 0;
 static volatile int qbl_opl_used = 0;
 static opl_t* qbl_live_opl = NULL;
 static double qbl_block_end = -1.0;
-static FILE* qbl_oplwav = NULL;     /* QBLIKE_OPLWAV=file: also dump the FM output (testing aid) */
+static FILE* qbl_oplwav = NULL;     /* QBLIKE_OPLWAV=file: also dump the whole audio output (testing aid) */
 static long qbl_oplwav_frames = 0;
 
 double dos_clock( void ) {
@@ -2794,67 +2807,39 @@ static void qbl_live_opl_render( APP_S16* out, int count ) {
         unsigned short r[ 2 ]; unsigned char d[ 2 ] = { 0, 0 };
         r[ 0 ] = 0x105; r[ 1 ] = 0x104; opl_write( qbl_live_opl, 2, r, d );
         for( int i = 0x01; i <= 0xF5; ++i ) { if( i == 0x04 ) continue; r[ 0 ] = (unsigned short) i; r[ 1 ] = (unsigned short)( 0x100 + i ); opl_write( qbl_live_opl, 2, r, d ); }
-        char const* wav = getenv( "QBLIKE_OPLWAV" );
-        if( wav && *wav ) { qbl_oplwav = fopen( wav, "wb" ); if( qbl_oplwav ) qbl_wav_header( qbl_oplwav, 0 ); }
     }
-    /* the OPL core makes one sample per chip clock / 288 (49716 Hz): render at that rate and
-       resample to the 44100 Hz output, otherwise pitch and envelopes come out 11% slow */
     static short buf[ SOUND_BUFFER_SIZE * 10 ];
-    static short nbuf[ SOUND_BUFFER_SIZE * 14 ];
-    static double ph = 0.0;                       /* position of the next output sample, in native samples after carry */
-    static short carry[ 2 ] = { 0, 0 };
     static struct { int at; unsigned short reg; unsigned char val; } due[ 8192 ];
-    const double nrate = 14318180.0 / 288.0;
-    const double ratio = nrate / 44100.0;
     if( count > SOUND_BUFFER_SIZE * 5 ) count = SOUND_BUFFER_SIZE * 5;
     const double latency = 0.08;
     double now = dos_clock();
     double bstart = qbl_block_end;
     if( bstart < 0.0 || fabs( bstart - ( now - latency ) ) > 0.06 ) bstart = now - latency;   /* (re)synchronise */
     double bend = bstart + count / 44100.0;
-    int m = (int)floor( ph + ( count - 1 ) * ratio ) + 1;   /* new native samples needed (index 1..m) */
     int ndue = 0;
     thread_mutex_lock( &qbl_opl_mutex );
     while( qbl_oplq_head != qbl_oplq_tail && ndue < 8192 ) {
         if( qbl_oplq[ qbl_oplq_head ].t >= bend ) break;
         double t = qbl_oplq[ qbl_oplq_head ].t;
-        int at = t <= bstart ? 0 : (int)( ( t - bstart ) * nrate );
-        if( at > m ) at = m;
+        int at = t <= bstart ? 0 : (int)( ( t - bstart ) * 44100.0 );
+        if( at > count ) at = count;
         due[ ndue ].at = at; due[ ndue ].reg = qbl_oplq[ qbl_oplq_head ].reg; due[ ndue ].val = qbl_oplq[ qbl_oplq_head ].val;
         ++ndue;
         qbl_oplq_head = ( qbl_oplq_head + 1 ) % QBL_OPLQ;
     }
     thread_mutex_unlock( &qbl_opl_mutex );
-    nbuf[ 0 ] = carry[ 0 ]; nbuf[ 1 ] = carry[ 1 ];
-    short* nb = nbuf + 2;
     int pos = 0;
     for( int i = 0; i < ndue; ++i ) {
-        if( due[ i ].at > pos ) { opl_render( qbl_live_opl, nb + pos * 2, due[ i ].at - pos, 1.0f ); pos = due[ i ].at; }
+        if( due[ i ].at > pos ) { opl_render( qbl_live_opl, buf + pos * 2, due[ i ].at - pos, 1.0f ); pos = due[ i ].at; }
         opl_write( qbl_live_opl, 1, &due[ i ].reg, &due[ i ].val );
     }
-    if( pos < m ) opl_render( qbl_live_opl, nb + pos * 2, m - pos, 1.0f );
-    for( int j = 0; j < count; ++j ) {
-        double p = ph + j * ratio;
-        int i0 = (int)p; double f = p - i0;
-        if( i0 >= m ) { i0 = m - 1; f = 1.0; }
-        for( int c = 0; c < 2; ++c ) {
-            double a = nbuf[ i0 * 2 + c ], b = nbuf[ ( i0 + 1 ) * 2 + c ];
-            buf[ j * 2 + c ] = (short)( a + ( b - a ) * f );
-        }
-    }
-    ph = ph + count * ratio - m;
-    if( ph < 0.0 ) ph = 0.0;
-    carry[ 0 ] = nbuf[ m * 2 ]; carry[ 1 ] = nbuf[ m * 2 + 1 ];
+    if( pos < count ) opl_render( qbl_live_opl, buf + pos * 2, count - pos, 1.0f );
     qbl_block_end = bend;
     for( int i = 0; i < count * 2; ++i ) {
         int v = out[ i ] + buf[ i ];
         out[ i ] = (APP_S16)( v > 32700 ? 32700 : v < -32700 ? -32700 : v );
     }
-    if( qbl_oplwav ) {
-        fwrite( buf, sizeof( short ), (size_t)( count * 2 ), qbl_oplwav );
-        qbl_oplwav_frames += count;
-        if( ( qbl_oplwav_frames / count ) % 20 == 0 ) qbl_wav_header( qbl_oplwav, qbl_oplwav_frames );
-    }
+
 }
 
 static void app_sound_callback( APP_S16* sample_pairs, int sample_pairs_count, void* user_data ) {
@@ -2871,6 +2856,7 @@ static void app_sound_callback( APP_S16* sample_pairs, int sample_pairs_count, v
         memset( modbuffer, 0, sample_pairs_count * 2 * sizeof( short ) );
         jar_mod_context_t* modctx = (jar_mod_context_t*)( context->current_music + 1 );        
         jar_mod_fillbuffer( modctx, modbuffer, sample_pairs_count, NULL );
+        if( !context->loop_music && modctx->loopcount > 0 ) context->music_done = true;   /* QBLike: MOD without loop ends */
         for( int i = 0; i < sample_pairs_count * 2; ++i ) {
             mixbuffer[ i ] = ( modbuffer[ i ] / 32768.0f ) * ( context->music_volume / 255.0f );
         }
@@ -3109,6 +3095,19 @@ static void app_sound_callback( APP_S16* sample_pairs, int sample_pairs_count, v
     context->commands_count = 0;
 
     qbl_live_opl_render( qbl_out0, qbl_count0 );   /* QBLike: FM written through the AdLib ports */
+    {
+        static int wav_checked = 0;
+        if( !wav_checked ) {
+            wav_checked = 1;
+            char const* wav = getenv( "QBLIKE_OPLWAV" );
+            if( wav && *wav ) { qbl_oplwav = fopen( wav, "wb" ); if( qbl_oplwav ) qbl_wav_header( qbl_oplwav, 0 ); }
+        }
+        if( qbl_oplwav && qbl_count0 > 0 ) {
+            fwrite( qbl_out0, sizeof( short ), (size_t)( qbl_count0 * 2 ), qbl_oplwav );
+            qbl_oplwav_frames += qbl_count0;
+            qbl_wav_header( qbl_oplwav, qbl_oplwav_frames );
+        }
+    }
 
     thread_mutex_unlock( &context->mutex );
 }
@@ -3614,6 +3613,7 @@ static int app_proc( app_t* app, void* user_data ) {
             } else if( current_music->format == MUSIC_FORMAT_MOD ) {
                 jar_mod_context_t* modctx = (jar_mod_context_t*)( current_music + 1 );        
                 jar_mod_seek_start( modctx );
+                modctx->loopcount = 0;
             } else if( current_music->format == MUSIC_FORMAT_OPB ) {
                 struct opb_t* opb = (struct opb_t*)( current_music + 1 );        
                 opb->position = 0;

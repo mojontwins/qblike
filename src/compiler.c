@@ -431,6 +431,7 @@ static Sym *declare_var(const char *name, int kind, int t, int udt, int fixlen, 
 /* ------------------------------------------------------------------ */
 static Expr *parse_expr(void);
 static Expr *parse_lvalue_from_id(int allow_call, int *isfuncret);
+static Expr *parse_add(void);
 double eval_const_num(Expr *e, int *ok);
 int eval_const_str(Expr *e, char **s, int *len);
 
@@ -596,6 +597,12 @@ static Expr *parse_builtin(int kw) {
     adv();
     Expr *e = enew(E_FUNC, T_SNG);
     switch (kw) {
+        case KW_SOUND: {
+            /* id% = SOUND file$   (QBLike): loads a WAV file */
+            e->sub = F_SNDLOAD; e->type = T_INT;
+            Expr *a = parse_add(); need_str(a); addarg(e, a);
+            return e;
+        }
         case KW_RND:
             e->sub = F_RND; e->type = T_SNG;
             if (acceptop('(')) { Expr *a = parse_expr(); need_num(a); addarg(e, a); expectop(')'); }
@@ -856,6 +863,16 @@ static Expr *parse_lvalue_from_id(int allow_call, int *isfuncret) {
         return e;
     }
     if (pi >= 0 && !isfuncret) cerr_at(col, "Expected: expression");
+
+    /* MUSIC (QBLike): true while music plays, unless the program has a variable called MUSIC */
+    if (!isfuncret && allow_call && st == T_NONE && !strcmp(base, "MUSIC") && !isop('(')) {
+        int sc;
+        if (!resolve_var(name, 0, 0, &sc)) {
+            Expr *e = enew(E_FUNC, T_INT);
+            e->sub = F_MUSIC;
+            return e;
+        }
+    }
 
     /* dotted name: UDT member access? */
     char *dot = strchr(name, '.');
@@ -2175,6 +2192,26 @@ static int is_fill_statement(void) {
     }
 }
 
+/* MUSIC ... versus an assignment to a variable or array element called MUSIC */
+static int is_music_statement(void) {
+    Tok *n = peekn(1);
+    if (n->k == TK_EOL || n->k == TK_REM) return 0;
+    if (n->k == TK_OP && (n->kw == '=' || n->kw == ':')) return 0;
+    if (n->k == TK_OP && n->kw == '(') {
+        int depth = 0;
+        for (int k = 1; ; k++) {
+            Tok *q = peekn(k);
+            if (q->k == TK_EOL || q->k == TK_REM) return 1;
+            if (q->k == TK_OP && q->kw == '(') depth++;
+            else if (q->k == TK_OP && q->kw == ')' && --depth == 0) {
+                Tok *a = peekn(k + 1);
+                return !(a->k == TK_OP && a->kw == '=');
+            }
+        }
+    }
+    return 1;
+}
+
 static void compile_statement(void) {
     Tok *t = cur();
     if (t->k == TK_ID) {
@@ -2195,6 +2232,25 @@ static void compile_statement(void) {
             ST(si)->i1 = parse_coord(&x, &y);
             ST(si)->e1 = x; ST(si)->e2 = y;
             if (acceptop(',')) ST(si)->e3 = parse_num_expr();
+            return;
+        }
+        /* MUSIC file$ [, LOOP] | MUSIC STOP | MUSIC VOLUME v%: QBLike extension, also not reserved */
+        if (pi < 0 && !strcmp(base, "MUSIC") && !strpbrk(t->s, "%&!#$") && is_music_statement()) {
+            adv();
+            int si = emit(S_MUSIC);
+            if (iskw(KW_STOP)) { adv(); ST(si)->i1 = 1; return; }
+            if (cur()->k == TK_ID && str_ieq(cur()->s, "VOLUME")) {
+                Tok *n = peekn(1);
+                if (!(n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && (n->kw == ':' || n->kw == ',')) ||
+                      (n->k == TK_KW && n->kw == KW_ELSE))) {
+                    adv();
+                    ST(si)->i1 = 2;
+                    ST(si)->e1 = parse_num_expr();
+                    return;
+                }
+            }
+            ST(si)->e1 = parse_str_expr();
+            if (acceptop(',')) { expectkw(KW_LOOP); ST(si)->i2 = 1; }
             return;
         }
         compile_assignment();
@@ -2647,7 +2703,31 @@ static void compile_statement(void) {
         }
         case KW_PCOPY: { int si = emit(S_PCOPY); ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr(); return; }
         case KW_BEEP: emit(S_BEEP); return;
-        case KW_SOUND: { int si = emit(S_SOUND); ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr(); return; }
+        case KW_SOUND: {
+            if (iskw(KW_PLAY)) {
+                /* SOUND PLAY id% [, channel%] [, volume%] [, pan%] [, LOOP]   (QBLike) */
+                adv();
+                int si = emit(S_SNDPLAY);
+                ST(si)->e1 = parse_num_expr();
+                Expr **slot[3] = { &ST(si)->e2, &ST(si)->e3, &ST(si)->e4 };
+                for (int k = 0; k < 3 && acceptop(','); k++) {
+                    if (iskw(KW_LOOP)) { adv(); ST(si)->i1 = 1; goto sndplay_done; }
+                    if (isop(',')) continue;
+                    *slot[k] = parse_num_expr();
+                }
+                if (acceptop(',')) { expectkw(KW_LOOP); ST(si)->i1 = 1; }
+            sndplay_done:
+                return;
+            }
+            if (iskw(KW_STOP)) {
+                /* SOUND STOP [channel%]   (QBLike) */
+                adv();
+                int si = emit(S_SNDSTOP);
+                if (!at_stmt_end()) ST(si)->e1 = parse_num_expr();
+                return;
+            }
+            int si = emit(S_SOUND); ST(si)->e1 = parse_num_expr(); expectop(','); ST(si)->e2 = parse_num_expr(); return;
+        }
         case KW_PLAY: {
             if (iskw(KW_ON) || iskw(KW_OFF) || iskw(KW_STOP)) {
                 int si = emit(S_PLAYCTL);

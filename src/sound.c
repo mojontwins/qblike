@@ -1,17 +1,49 @@
-/* sound.c - PC-speaker style BEEP / SOUND / PLAY */
+/* sound.c - PC-speaker style BEEP / SOUND / PLAY, and the MUSIC / SOUND PLAY extensions */
 #include "qb.h"
 #include "doslike/dos.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
 
 #define RATE 22050
-#define NCH 8
+#define NCH 4                      /* dos-like channels 0-3: BEEP/SOUND/PLAY; 4-15: SOUND PLAY 1-12 */
+#define UCH0 NCH
+#define NUCH 12
 
 static struct sound_t *chsound[NCH];
 static int nextch = 0;
 static int snd_ready = 0;
+
+/* The audio thread picks up sound and music pointers once per frame, so anything we stop is
+   freed a little later, never at once. */
+#define NGRAVE 512
+static struct { void *p; double t; } grave[NGRAVE];
+static int ngrave = 0;
+static void grave_collect(int all) {
+    double now = sys_time();
+    int k = 0;
+    for (int i = 0; i < ngrave; i++) {
+        if (all || now - grave[i].t > 0.3) free(grave[i].p);
+        else grave[k++] = grave[i];
+    }
+    ngrave = k;
+}
+static void defer_free(void *p) {
+    if (!p) return;
+    if (ngrave == NGRAVE) { sys_sleep(300); grave_collect(1); }
+    grave[ngrave].p = p; grave[ngrave].t = sys_time(); ngrave++;
+}
+
+/* SOUND file$ / SOUND PLAY / MUSIC */
+#define NSND 256
+static struct sound_t *usnd[NSND];
+static char *usnd_name[NSND];
+static int nusnd = 0;
+static double uch_start[NUCH];
+static struct music_t *cur_music = NULL;
+static int music_vol = 255;
 
 /* Music queue. Every note (or pause) of BEEP/SOUND/PLAY is queued with the time it ends; the next
    one starts when the previous one finishes. In background mode (PLAY "MB...", SOUND) statements
@@ -30,12 +62,12 @@ static int p_oct = 4, p_len = 4, p_tempo = 120, p_mode = 0 /* 0 normal,1 legato,
 
 void snd_init(void) {
     if (snd_ready) return;
-    setsoundmode(soundmode_16bit_mono_22050);
+    setsoundmode(soundmode_16bit_stereo_44100);
     snd_ready = 1;
 }
 
 void snd_reset(void) {
-    snd_stop();
+    snd_end();
     p_oct = 4; p_len = 4; p_tempo = 120; p_mode = 0; p_bg = 0;
 }
 
@@ -51,13 +83,14 @@ static void start_sound(struct sound_t *snd) {
     int ch = nextch;
     nextch = (nextch + 1) % NCH;
     stopsound(ch);
-    if (chsound[ch]) { free(chsound[ch]); chsound[ch] = NULL; }
+    if (chsound[ch]) { defer_free(chsound[ch]); chsound[ch] = NULL; }
     chsound[ch] = snd;
     playsound(ch, snd, 0, 160);
 }
 
 void snd_poll(void) {
     double now = sys_time();
+    if (ngrave) grave_collect(0);
     for (int i = 0; i < npend; ) {
         if (pend[i].start <= now + 0.002) { start_sound(pend[i].snd); pend[i] = pend[--npend]; }
         else i++;
@@ -262,4 +295,108 @@ void snd_play(const char *s, int len) {
 
 int snd_playfn(void) {
     return snd_queue_count();
+}
+
+
+/* ------------------------------------------------------------------ */
+/* QBLike extensions: MUSIC and SOUND file$ / SOUND PLAY / SOUND STOP  */
+/* ------------------------------------------------------------------ */
+void file_native_name(const char *in, int len, char *out, int outsz, int for_read);
+
+static int file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+/* end of program: stop music and samples, forget loaded sounds */
+void snd_end(void) {
+    snd_stop();
+    for (int i = 0; i < NUCH; i++) stopsound(UCH0 + i);
+    stopmusic();
+    defer_free(cur_music); cur_music = NULL;
+    for (int i = 0; i < nusnd; i++) { defer_free(usnd[i]); free(usnd_name[i]); usnd[i] = NULL; usnd_name[i] = NULL; }
+    nusnd = 0;
+    music_vol = 255;
+}
+
+int snd_load(const char *name, int nl) {
+    snd_init();
+    char path[1024];
+    file_native_name(name, nl, path, sizeof path, 1);
+    for (int i = 0; i < nusnd; i++) {   /* already loaded */
+#ifdef _WIN32
+        if (!_stricmp(usnd_name[i], path)) return i + 1;
+#else
+        if (!strcmp(usnd_name[i], path)) return i + 1;
+#endif
+    }
+    if (!file_exists(path)) rt_error(53);
+    if (nusnd == NSND) rt_error_msg(7, "Too many sounds loaded");
+    struct sound_t *snd = loadwav(path);
+    if (!snd) rt_error_msg(5, "Bad or unsupported sound file (WAV, 4000-48000 Hz, mono or stereo)");
+    usnd[nusnd] = snd;
+    usnd_name[nusnd] = qb_strdup(path);
+    return ++nusnd;
+}
+
+void snd_sample_play(int id, int ch, int vol, int pan, int loop) {
+    if (id < 1 || id > nusnd || !usnd[id - 1]) rt_error(5);
+    if (ch < 0 || ch > NUCH || vol < 0 || vol > 255 || pan < -100 || pan > 100) rt_error(5);
+    double now = sys_time();
+    if (ch == 0) {   /* first free channel, else the one playing for the longest time */
+        int best = 0;
+        for (int i = 0; i < NUCH; i++) {
+            if (!soundplaying(UCH0 + i)) { best = i; goto found; }
+            if (uch_start[i] < uch_start[best]) best = i;
+        }
+    found:
+        ch = best + 1;
+    }
+    int l = pan > 0 ? vol * (100 - pan) / 100 : vol;
+    int r = pan < 0 ? vol * (100 + pan) / 100 : vol;
+    uch_start[ch - 1] = now;
+    playsound(UCH0 + ch - 1, usnd[id - 1], loop, vol);
+    soundvolume(UCH0 + ch - 1, l, r);
+}
+
+void snd_sample_stop(int ch) {
+    if (ch < 0 || ch > NUCH) rt_error(5);
+    for (int i = 0; i < NUCH; i++) if (ch == 0 || ch == i + 1) stopsound(UCH0 + i);
+}
+
+void snd_music_play(const char *name, int nl, int loop) {
+    snd_init();
+    char path[1024];
+    file_native_name(name, nl, path, sizeof path, 1);
+    FILE *f = fopen(path, "rb");
+    if (!f) rt_error(53);
+    unsigned char h[4] = { 0 };
+    size_t n = fread(h, 1, 4, f);
+    fclose(f);
+    struct music_t *m = NULL;
+    if (n == 4 && !memcmp(h, "MThd", 4)) m = qbl_loadmid_opl(path);
+    else m = loadmod(path);
+    if (!m) rt_error_msg(5, "Bad or unsupported music file (MOD or MID)");
+    stopmusic();
+    defer_free(cur_music);
+    cur_music = m;
+    playmusic(m, loop ? 1 : 0, music_vol);
+}
+
+void snd_music_stop(void) {
+    stopmusic();
+    defer_free(cur_music);
+    cur_music = NULL;
+}
+
+void snd_music_volume(int v) {
+    if (v < 0 || v > 255) rt_error(5);
+    music_vol = v;
+    musicvolume(v);
+}
+
+int snd_music_playing(void) {
+    return cur_music && musicplaying();
 }

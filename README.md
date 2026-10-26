@@ -103,6 +103,8 @@ MOUSE ON                                   ' NEW: shows the mouse cursor (MOUSE 
 PUT (x, y), sprite(0), MASK                ' NEW: PUT skipping color 0
 CLIP 0, 20, 319, 199                       ' NEW: clipping area for PUT
 FILL (x, y), c                             ' NEW: fill the area of the color at (x, y)
+MUSIC "SONG.MOD", LOOP                     ' NEW: background music, MOD or MIDI (MUSIC STOP, MUSIC VOLUME v)
+boom = SOUND "BOOM.WAV": SOUND PLAY boom   ' NEW: WAV sound effects, 12 channels with volume and pan
 ```
 
 In QBLike, `PUT` clips the image instead of raising an error when it goes off the screen (or the `CLIP` area).
@@ -197,7 +199,7 @@ No build system is needed: it compiles with a single compiler command.
 Changes to dos-like: `setcrtmode()` to turn the CRT effect on or off at run time, Alt+Enter for
 fullscreen, mouse position also without CRT and outside the window, pointer kept inside the picture in fullscreen, on Windows preventing Alt/F10 from
 activating the window's system menu (which blocked the keyboard), handling `SIGTERM`/Ctrl+C on Linux
-(`SDL_QUIT`), a 64 MB stack for the program thread (deep SUB/FUNCTION recursion), and a timestamped OPL write queue (`dos_opl_write`) mixed with the rest of the audio. It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
+(`SDL_QUIT`), a 64 MB stack for the program thread (deep SUB/FUNCTION recursion), and a timestamped OPL write queue (`dos_opl_write`) mixed with the rest of the audio, OPL output resampled from the chip rate (49716 Hz) to 44100 Hz and MIDI on the OPL tuned one octave down (both played too high), and MOD music that can end instead of always looping. It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
 (QBLike draws its own mouse cursor, like the DOS driver: an arrow in graphics modes, an inverted block in
 text mode).
 
@@ -316,6 +318,8 @@ MOUSE ON                                   ' NUEVO: muestra el cursor del ratón
 PUT (x, y), sprite(0), MASK                ' NUEVO: PUT saltándose el color 0
 CLIP 0, 20, 319, 199                       ' NUEVO: área de recorte para PUT
 FILL (x, y), c                             ' NUEVO: rellena la zona del color que hay en (x, y)
+MUSIC "TEMA.MOD", LOOP                     ' NUEVO: música de fondo, MOD o MIDI (MUSIC STOP, MUSIC VOLUME v)
+boom = SOUND "BOOM.WAV": SOUND PLAY boom   ' NUEVO: efectos de sonido WAV, 12 canales con volumen y pan
 ```
 
 En QBLike, `PUT` recorta la imagen en lugar de dar error cuando se sale de la pantalla (o del área de `CLIP`).
@@ -411,7 +415,7 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 
 Cambios en dos-like: `setcrtmode()` para activar o desactivar el efecto CRT en tiempo de ejecución,
 Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera de la ventana, puntero confinado a la imagen en pantalla completa, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
-(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION) y una cola de escrituras al OPL con marca de tiempo (`dos_opl_write`) que se mezcla con el resto del audio. Se compila con `DISABLE_SCREEN_FRAME`
+(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION) y una cola de escrituras al OPL con marca de tiempo (`dos_opl_write`) que se mezcla con el resto del audio, la salida del OPL remuestreada de la frecuencia del chip (49716 Hz) a 44100 Hz y el MIDI por OPL bajado una octava (ambos sonaban más agudos), y música MOD que puede terminar en vez de repetirse siempre. Se compila con `DISABLE_SCREEN_FRAME`
 (sin el marco del monitor) y `DISABLE_SYSTEM_CURSOR` (QBLike dibuja su propio cursor de ratón, como el
 controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 

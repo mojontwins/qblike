@@ -19,6 +19,8 @@ The only behavior difference from QBasic is that `PUT` clips the image instead o
   - [PUT ... MASK](#put--mask)
   - [CLIP (and clipped PUT)](#clip)
   - [FILL](#fill)
+  - [MUSIC](#music)
+  - [SOUND (sound effects)](#sound-sound-effects)
   - [LOADBMP](#loadbmp)
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
@@ -219,6 +221,71 @@ FILL (20, 10), 12                                       ' only the top line (col
 ```
 
 ---
+
+### MUSIC
+
+```
+MUSIC filespec$[, LOOP]
+MUSIC STOP
+MUSIC VOLUME volume%
+playing% = MUSIC
+```
+
+Plays background music while the program goes on.
+
+- `MUSIC file$` plays a **MOD** (ProTracker, 4 channels) or **MID** (General MIDI, played on the emulated
+  OPL FM synthesizer, the sound of a Sound Blaster) file. The format is detected from the contents, not
+  the extension. With `LOOP` the music starts again when it ends; without it, it plays once.
+- A new `MUSIC` replaces the music that is playing. `MUSIC STOP` stops it.
+- `MUSIC VOLUME v%` sets the volume, 0-255 (255 at program start). It can be changed while playing,
+  for fades.
+- `MUSIC` used as a function returns -1 (true) while music is playing and 0 when it has ended or was stopped.
+- If the file does not exist: *File not found*. If it is not a valid MOD or MID: *Illegal function call*.
+- Music stops when the program ends.
+
+`MUSIC` **is not a reserved word**: programs with their own variable, array or `SUB` called `MUSIC`
+keep working (if a program uses a variable `MUSIC`, the name refers to the variable).
+
+```basic
+MUSIC "TITLE.MOD", LOOP
+DO: LOOP WHILE INKEY$ = ""
+FOR v% = 255 TO 0 STEP -5: MUSIC VOLUME v%: WAIT VSYNC: NEXT    ' fade out
+MUSIC "START.MID"
+DO: LOOP WHILE MUSIC                                            ' wait for it to end
+```
+
+### SOUND (sound effects)
+
+```
+id% = SOUND filespec$
+SOUND PLAY id%[, channel%][, volume%][, pan%][, LOOP]
+SOUND STOP [channel%]
+```
+
+Sound effects from WAV files, mixed with the music and with `PLAY`. QBasic's `SOUND frequency, duration`
+keeps working as always.
+
+- `id% = SOUND file$` loads a WAV file (mono or stereo, 4000-48000 Hz, 8 or 16 bits) and returns its
+  number. Loading the same file again returns the same number, so it can be done inside a loop.
+- `SOUND PLAY` plays it on one of **12 channels** (1-12). Without `channel%` it uses a free one (or, if all
+  are busy, the one that has been playing the longest). Playing on a busy channel replaces what was playing there.
+- `volume%` 0-255 (default 255); `pan%` from -100 (left) to 100 (right), 0 centered (default).
+  Empty arguments keep their default: `SOUND PLAY boom%, , , -80`.
+- With `LOOP` the sound repeats until `SOUND STOP` (an engine, rain...).
+- `SOUND STOP channel%` stops one channel; `SOUND STOP` without a number stops all 12.
+- Wrong file: *File not found* / *Illegal function call*; channel, volume or pan out of range or a
+  number not returned by `SOUND file$`: *Illegal function call*.
+
+```basic
+laser% = SOUND "LASER.WAV"
+motor% = SOUND "MOTOR.WAV"
+SOUND PLAY motor%, 1, 120, , LOOP          ' channel 1: engine, all the time
+DO
+    IF MULTIKEY(57) THEN SOUND PLAY laser%, , , (x% - 160) * 100 \ 160   ' from where the ship is
+    ...
+LOOP UNTIL MULTIKEY(1)
+SOUND STOP
+```
 
 ### LOADBMP
 

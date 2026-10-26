@@ -319,6 +319,23 @@ static int fill_stmt_at(TokLine *tl, int i) {
         return i > 0 && tl->t[i - 1].k == TK_KW && tl->t[i - 1].kw == KW_WAIT &&
                (!n || n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE));
     }
+    if (qb_stricmp(t->s, "VOLUME") == 0)               /* MUSIC VOLUME */
+        return i > 0 && fill_stmt_at(tl, i - 1) && qb_stricmp(tl->t[i - 1].s, "MUSIC") == 0 &&
+               i + 1 < tl->n && tl->t[i + 1].k != TK_EOL && tl->t[i + 1].k != TK_REM &&
+               !(tl->t[i + 1].k == TK_OP && (tl->t[i + 1].kw == ':' || tl->t[i + 1].kw == ','));
+    if (qb_stricmp(t->s, "MUSIC") == 0) {              /* MUSIC file$ | STOP | VOLUME */
+        if (i > 0) {
+            Tok *p = &tl->t[i - 1];
+            int ok = (p->k == TK_OP && p->kw == ':') || (p->k == TK_KW && (p->kw == KW_THEN || p->kw == KW_ELSE)) ||
+                     (i == 1 && p->k == TK_NUM);
+            if (!ok) return 0;
+        }
+        if (i + 1 >= tl->n) return 0;
+        Tok *n = &tl->t[i + 1];
+        if (n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && (n->kw == '=' || n->kw == ':' || n->kw == '('))) return 0;
+        for (int pi = 1; pi < doc.nparts; pi++) if (qb_stricmp(doc.parts[pi].name, "MUSIC") == 0) return 0;
+        return 1;
+    }
     int vs = 0;
     if (qb_stricmp(t->s, "FILL") != 0) return 0;
     if (i > 0) {
@@ -366,7 +383,7 @@ static int format_line(const char *in, char *out, int outsz, int update_case) {
             }
             case TK_ID: {
                 char base[64], sfx;
-                if (fill_stmt_at(&tl, i)) { strcpy(txt, qb_stricmp(t->s, "VSYNC") == 0 ? "VSYNC" : "FILL"); cls = PT_KW; break; }
+                if (fill_stmt_at(&tl, i)) { int k = 0; for (; t->s[k] && k < 40; k++) txt[k] = (char)toupper((unsigned char)t->s[k]); txt[k] = 0; cls = PT_KW; break; }
                 if (firstkw == KW_DEFINT || firstkw == KW_DEFLNG || firstkw == KW_DEFSNG || firstkw == KW_DEFDBL || firstkw == KW_DEFSTR) {
                     /* letter ranges of DEFtype are not variable names: upper case, kept out of the case dictionary */
                     snprintf(txt, sizeof txt, "%s", t->s);
@@ -1831,7 +1848,7 @@ static void start_program(int step) {
         int st = rt_run(prog, 0);
         running = 0;
         suspended = 0;
-        snd_stop();
+        snd_end();
         opl_ports_reset();
         if (st == RUN_RESTART) {
             step = restart_step;

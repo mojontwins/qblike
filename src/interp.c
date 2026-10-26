@@ -708,6 +708,16 @@ static double builtin_num(Expr *e) {
             return gfx_pointfn(argi(e, 0));
         case F_RND: return qb_rnd(e->nargs ? evn(e->args[0]) : 0, e->nargs);
         case F_SADD: case F_VARPTR: case F_VARSEG: return 0;
+        case F_MUSIC: return snd_music_playing() ? -1 : 0;
+        case F_SNDLOAD: {
+            char *nm; int nl;
+            evs(e->args[0], &nm, &nl);
+            char buf[1024];
+            if (nl > 1000) nl = 1000;
+            memcpy(buf, nm, (size_t)nl);
+            free(nm);
+            return snd_load(buf, nl);
+        }
         case F_SCREEN: {
             int r = argi(e, 0), c = argi(e, 1);
             int z = e->nargs > 2 ? argi(e, 2) : 0;
@@ -1795,6 +1805,38 @@ static int exec(Frame *f, int pc) {
             }
             case S_PCOPY: gfx_pcopy((int)qb_round_even(evn(s->e1)), (int)qb_round_even(evn(s->e2))); pc++; break;
             case S_BEEP: snd_beep(); pc++; break;
+            case S_MUSIC: {
+                if (s->i1 == 1) snd_music_stop();
+                else if (s->i1 == 2) snd_music_volume((int)qb_round_even(evn(s->e1)));
+                else {
+                    char *nm; int nl;
+                    evs(s->e1, &nm, &nl);
+                    char buf[1024];
+                    if (nl > 1000) nl = 1000;
+                    memcpy(buf, nm, (size_t)nl);
+                    free(nm);
+                    snd_music_play(buf, nl, s->i2);
+                }
+                pc++;
+                break;
+            }
+            case S_SNDPLAY: {
+                int id = (int)qb_round_even(evn(s->e1));
+                int ch = s->e2 ? (int)qb_round_even(evn(s->e2)) : 0;
+                int vol = s->e3 ? (int)qb_round_even(evn(s->e3)) : 255;
+                int pan = s->e4 ? (int)qb_round_even(evn(s->e4)) : 0;
+                if (s->e2 && ch == 0) rt_error(5);
+                snd_sample_play(id, ch, vol, pan, s->i1);
+                pc++;
+                break;
+            }
+            case S_SNDSTOP: {
+                int ch = s->e1 ? (int)qb_round_even(evn(s->e1)) : 0;
+                if (s->e1 && ch == 0) rt_error(5);
+                snd_sample_stop(ch);
+                pc++;
+                break;
+            }
             case S_SOUND: {
                 double fr = evn(s->e1), du = evn(s->e2);
                 if ((fr < 37 && fr != 0) || fr > 32767 || du < 0 || du > 65535) rt_error(5);

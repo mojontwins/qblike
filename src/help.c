@@ -97,6 +97,7 @@ static const HelpEnt H[] = {
 { "MOD", "numeric-expression1 MOD numeric-expression2", "Integer remainder of a division (operands are rounded first).", "Operators" },
 { "MOUSE", "MOUSE x%, y%, buttons%   or   MOUSE ON | OFF", "QBLike extension. Reads the mouse into three numeric variables.\n\nx% and y% get the pointer position on the visible screen in the current\nmode's resolution (0-319 by 0-199 in SCREEN 13 and SCREEN 1, 0-639 by\n0-479 in SCREEN 12; text column and row, from 0, in SCREEN 0). They are\n-1, -1 when the pointer is outside the picture or the window. Coordinates\nare absolute: VIEW and WINDOW are not applied.\n\nbuttons%: bit 0 = left button, bit 1 = right button\n(1 left, 2 right, 3 both, 0 none).\n\nMOUSE ON / MOUSE OFF show or hide the mouse cursor (an arrow in graphics\nmodes, an inverted block in SCREEN 0). It is hidden when a program\nstarts; MOUSE still reads the mouse while it is hidden. The cursor is overlaid on the displayed picture only, so POINT,\nGET and PEEK never see it.\n\n  DO\n      MOUSE x%, y%, b%\n      IF b% AND 1 THEN PSET (x%, y%), 15\n  LOOP UNTIL INKEY$ = CHR$(27)", "MULTIKEY INKEY$" },
 { "MULTIKEY", "MULTIKEY(scancode%)", "QBLike extension. Returns -1 while the key with the given scan code is\nheld down, 0 otherwise. Several keys can be checked at once, ideal for\ngames.\n\nCommon scan codes: Esc 1, Enter 28, Space 57, Ctrl 29, Alt 56,\nLeft Shift 42, Up 72, Down 80, Left 75, Right 77, A 30, D 32, S 31, W 17.", "INKEY$ INP" },
+{ "MUSIC", "MUSIC filespec$[, LOOP]\nMUSIC STOP\nMUSIC VOLUME volume%\nMUSIC", "QBLike extension. Plays background music while the program goes on.\n\n  MUSIC file$        plays a MOD (ProTracker) or MID (MIDI, on the FM\n                     synthesizer) file; with LOOP it starts again at the\n                     end. A new MUSIC replaces the current music.\n  MUSIC STOP         stops it.\n  MUSIC VOLUME v%    0-255 (255 at start), also while playing.\n  MUSIC              as a function: -1 while music plays, 0 if not.\n\n  MUSIC \"TITLE.MOD\", LOOP\n  ...\n  MUSIC \"GAMEOVER.MID\"\n  DO: LOOP WHILE MUSIC\n\nMUSIC is not a reserved word: programs with their own variable or\nSUB called MUSIC keep working.", "SOUND PLAY" },
 { "NAME", "NAME oldspec$ AS newspec$", "Renames a file.", "KILL" },
 { "OCT$", "OCT$(numeric-expression&)", "Returns the octal representation of a number.", "HEX$" },
 { "ON ERROR", "ON ERROR GOTO line\nON ERROR GOTO 0\n...\nRESUME [NEXT | line]", "Enables error handling.", "RESUME ERR ERROR" },
@@ -139,7 +140,7 @@ static const HelpEnt H[] = {
 { "SHELL", "SHELL [commandstring$]", "Runs an operating system command.", "" },
 { "SIN", "SIN(angle)", "Returns the sine of an angle given in radians.", "COS TAN ATN" },
 { "SLEEP", "SLEEP [seconds&]", "Suspends execution until a key is pressed or the time elapses.", "INKEY$" },
-{ "SOUND", "SOUND frequency, duration", "Generates a tone. Duration is in clock ticks (18.2 per second).", "PLAY BEEP" },
+{ "SOUND", "SOUND frequency, duration\nid% = SOUND filespec$\nSOUND PLAY id%[, channel%][, volume%][, pan%][, LOOP]\nSOUND STOP [channel%]", "SOUND frequency, duration generates a tone. Duration is in clock ticks\n(18.2 per second).\n\nQBLike extension, sound effects from WAV files (mono or stereo,\n4000-48000 Hz):\n  id% = SOUND file$   loads the file and returns its number (loading\n                      the same file again returns the same number)\n  SOUND PLAY          plays it on a channel (1-12; omitted = a free one).\n                      volume% 0-255 (255), pan% -100 left to 100 right\n                      (0), LOOP repeats it until SOUND STOP. Playing on\n                      a busy channel replaces what was playing there.\n  SOUND STOP          stops a channel, or all of them without channel%.\n\n  boom% = SOUND \"BOOM.WAV\"\n  SOUND PLAY boom%, , 200, -60", "PLAY BEEP MUSIC" },
 { "SPACE$", "SPACE$(n%)", "Returns a string of n spaces.", "STRING$ SPC" },
 { "SPC", "SPC(n%)", "Skips n spaces in a PRINT statement.", "TAB PRINT" },
 { "SQR", "SQR(numeric-expression)", "Returns the square root.", "" },
@@ -198,7 +199,7 @@ static const char *extra_topics[][2] = {
       "                  <<PALETTE>> <<VIEW>> <<WINDOW>> <<PCOPY>> <<POINT>>\n"
       "                  <<LOADBMP>> <<LOADGIF>> <<LOADPAL>> <<CLIP>> <<FILL>>\n"
       "  Keyboard/mouse: <<INKEY$>> <<MULTIKEY>> <<MOUSE>> <<INPUT$>> <<SLEEP>>\n"
-      "  Sound:          <<BEEP>> <<SOUND>> <<PLAY>>\n"
+      "  Sound:          <<BEEP>> <<SOUND>> <<PLAY>> <<ON PLAY>> <<MUSIC>>\n"
       "  Strings:        <<LEFT$>> <<MID$>> <<INSTR>> <<LEN>> <<STR$>> <<VAL>> <<CHR$>> <<ASC>>\n"
       "  Math:           <<ABS>> <<INT>> <<FIX>> <<SQR>> <<SIN>> <<RND>> <<RANDOMIZE>>\n"
       "  Files:          <<OPEN>> <<CLOSE>> <<GET>> <<PUT>> <<EOF>> <<KILL>> <<FILES>>\n"
@@ -295,7 +296,10 @@ static const char *extra_topics[][2] = {
       "  * Clipped sprites: PUT never fails off-screen; area set with <<CLIP>>\n"
       "  * Page flipping: SCREEN 7, 0, 1, 0 ... <<PCOPY>> 1, 0\n"
       "  * Loading images: <<LOADBMP>>, <<LOADGIF>> and <<LOADPAL>>\n"
-      "  * Flood fill by color, any border: <<FILL>> (x, y), color\n\n"
+      "  * Flood fill by color, any border: <<FILL>> (x, y), color\n"
+      "  * Background music: <<MUSIC>> \"SONG.MOD\", LOOP   (MOD or MIDI)\n"
+      "  * Sound effects: id = <<SOUND>> \"BOOM.WAV\": SOUND PLAY id\n"
+      "  * AdLib FM ports: OUT &H388, reg: OUT &H389, value   (see <<OUT>>)\n\n"
       "  See also: <<INP>> <<OUT>> <<DEF SEG>> <<GET>>\n" },
     { "Menus",
       "  Menus\n\n"

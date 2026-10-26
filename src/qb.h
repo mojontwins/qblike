@@ -287,7 +287,7 @@ enum {
     S_PCOPY, S_POKE, S_DEFSEG, S_OUT, S_WAIT, S_MIDSTMT, S_LSET, S_RSET, S_STOP,
     S_SYSTEM, S_CLEAR, S_SELECT, S_CASE, S_EXITPROC, S_LETFUNC, S_TRON, S_TROFF,
     S_KEY, S_ONTIMER, S_TIMERCTL, S_ONKEY, S_KEYCTL, S_RUN, S_SHELL, S_LPRINT,
-    S_FIELD, S_FNRET, S_ONPLAY, S_RESET, S_CHAIN, S_LOCK, S_ENVIRON, S_BLOAD, S_BSAVE, S_LOADIMG, S_LOADPAL, S_CLIP, S_MOUSE, S_FILL, S_VSYNC, S_PLAYCTL,
+    S_FIELD, S_FNRET, S_ONPLAY, S_RESET, S_CHAIN, S_LOCK, S_ENVIRON, S_BLOAD, S_BSAVE, S_LOADIMG, S_LOADPAL, S_CLIP, S_MOUSE, S_FILL, S_VSYNC, S_PLAYCTL, S_MUSIC, S_SNDPLAY, S_SNDSTOP,
     S_COUNT
 };
 
@@ -300,7 +300,7 @@ enum {
     F_MID, F_MKD, F_MKI, F_MKL, F_MKS, F_OCT, F_PEEK, F_PEN, F_PLAY, F_PMAP, F_POINT,
     F_POS, F_RIGHT, F_RND, F_RTRIM, F_SADD, F_SCREEN, F_SEEK, F_SGN, F_SIN, F_SPACE,
     F_SQR, F_STICK, F_STR, F_STRIG, F_STRING, F_TAN, F_TIME, F_TIMER, F_UBOUND,
-    F_UCASE, F_VAL, F_VARPTR, F_VARPTRS, F_VARSEG, F_SPC, F_TAB, F_LENVAR, F_CVSMBF,
+    F_UCASE, F_VAL, F_VARPTR, F_VARPTRS, F_VARSEG, F_MUSIC, F_SNDLOAD, F_SPC, F_TAB, F_LENVAR, F_CVSMBF,
     F_CVDMBF, F_MKSMBF, F_MKDMBF, F_IOCTL, F_COMMAND, F_MULTIKEY
 };
 
@@ -468,6 +468,14 @@ int  snd_queue_count(void);   /* notes in the background music queue (playing or
 double qb_varptr_num(const char *tok);
 void qb_varptr_str(const char *tok, const char **s, int *len);
 void snd_poll(void);          /* start queued background sounds that are due */
+void snd_end(void);           /* program end: stop music and samples, unload sounds */
+int  snd_load(const char *name, int nl);
+void snd_sample_play(int id, int ch, int vol, int pan, int loop);
+void snd_sample_stop(int ch);
+void snd_music_play(const char *name, int nl, int loop);
+void snd_music_stop(void);
+void snd_music_volume(int v);
+int  snd_music_playing(void);
 void opl_ports_reset(void);   /* AdLib ports: reset timers, key off all FM voices */
 int  snd_playfn(void);
 void snd_stop(void);

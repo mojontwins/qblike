@@ -1852,6 +1852,8 @@ enum op2_flags_t {
 };
 
 struct opl_t {
+  double rs_ph;           /* QBLike: resampler position (chip rate 49716 Hz -> 44100 Hz output) */
+  short rs_carry[ 2 ];    /* QBLike: last chip sample of the previous block */
   signed char notes2voices[16][128][2]; /* keeps the map of channel:notes -> voice allocations */
   unsigned short channelpitch[16];      /* per-channel pitch level */
   unsigned short channelvol[16];        /* per-channel pitch level */
@@ -1871,9 +1873,35 @@ void oplregwr( opl_t* opl, uint16_t reg, uint8_t data ) {
 }
 
 
+/* QBLike: the emulator makes one sample per chip clock / 288 (49716 Hz). Callers count samples at
+   44100 Hz, so render at the chip rate and resample (linear); otherwise pitch, envelopes and
+   timing all come out about 11% slow. */
 void opl_render( opl_t* opl, short* sample_pairs, int sample_pairs_count, float volume ) {
-    memset( sample_pairs, 0, sample_pairs_count * 2 * sizeof( short ) );
-    opl_emu_generate( &opl->opl_emu, sample_pairs, sample_pairs_count, volume );
+    static short* nbuf = NULL;
+    static int ncap = 0;
+    if( sample_pairs_count <= 0 ) return;
+    const double ratio = ( 14318180.0 / 288.0 ) / 44100.0;
+    int m = (int)( opl->rs_ph + ( sample_pairs_count - 1 ) * ratio ) + 1;   /* new chip samples: 1..m */
+    if( m + 1 > ncap ) {
+        short* nb = (short*) realloc( nbuf, sizeof( short ) * 2 * (size_t)( m + 64 ) );
+        if( !nb ) { memset( sample_pairs, 0, sample_pairs_count * 2 * sizeof( short ) ); return; }
+        nbuf = nb; ncap = m + 64;
+    }
+    nbuf[ 0 ] = opl->rs_carry[ 0 ]; nbuf[ 1 ] = opl->rs_carry[ 1 ];
+    memset( nbuf + 2, 0, (size_t)m * 2 * sizeof( short ) );
+    opl_emu_generate( &opl->opl_emu, nbuf + 2, (uint32_t)m, volume );
+    for( int j = 0; j < sample_pairs_count; ++j ) {
+        double p = opl->rs_ph + j * ratio;
+        int i0 = (int)p; double f = p - i0;
+        if( i0 >= m ) { i0 = m - 1; f = 1.0; }
+        for( int c = 0; c < 2; ++c ) {
+            double a = nbuf[ i0 * 2 + c ], b = nbuf[ ( i0 + 1 ) * 2 + c ];
+            sample_pairs[ j * 2 + c ] = (short)( a + ( b - a ) * f );
+        }
+    }
+    opl->rs_ph += sample_pairs_count * ratio - m;
+    if( opl->rs_ph < 0.0 ) opl->rs_ph = 0.0;
+    opl->rs_carry[ 0 ] = nbuf[ m * 2 ]; opl->rs_carry[ 1 ] = nbuf[ m * 2 + 1 ];
 }
 
 
@@ -2385,6 +2413,8 @@ void opl_noteoff(opl_t* opl, unsigned short voice) {
 void opl_noteon(opl_t* opl, unsigned short voice, unsigned int note, int pitch) {
   unsigned int freq = freqtable[note];
   unsigned int octave = octavetable[note];
+  /* QBLike: with the built-in GM timbres the table plays one octave high (note 69 gave 880 Hz) */
+  if (!opl->is_op2 && octave > 0) octave--;
 
   if (pitch != 0) {
     if (pitch > 127) {

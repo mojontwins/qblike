@@ -18,6 +18,8 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [PUT ... MASK](#put--mask)
   - [CLIP (y PUT con recorte)](#clip)
   - [FILL](#fill)
+  - [MUSIC](#music)
+  - [SOUND (efectos de sonido)](#sound-efectos-de-sonido)
   - [LOADBMP](#loadbmp)
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
@@ -219,6 +221,71 @@ FILL (20, 10), 12                                       ' solo la línea superio
 ```
 
 ---
+
+### MUSIC
+
+```
+MUSIC archivo$[, LOOP]
+MUSIC STOP
+MUSIC VOLUME volumen%
+sonando% = MUSIC
+```
+
+Toca música de fondo mientras el programa sigue.
+
+- `MUSIC archivo$` toca un archivo **MOD** (ProTracker, 4 canales) o **MID** (General MIDI, tocado con el
+  sintetizador FM OPL emulado, el sonido de una Sound Blaster). El formato se detecta por el contenido, no
+  por la extensión. Con `LOOP` la música vuelve a empezar al terminar; sin él, suena una vez.
+- Un `MUSIC` nuevo sustituye a la música que esté sonando. `MUSIC STOP` la detiene.
+- `MUSIC VOLUME v%` fija el volumen, 0-255 (255 al empezar el programa). Se puede cambiar mientras suena,
+  para hacer fundidos.
+- `MUSIC` usado como función devuelve -1 (verdadero) mientras suena música y 0 cuando ha terminado o se ha detenido.
+- Si el archivo no existe: *File not found*. Si no es un MOD o MID válido: *Illegal function call*.
+- La música se detiene al terminar el programa.
+
+`MUSIC` **no es una palabra reservada**: los programas con su propia variable, array o `SUB` llamado
+`MUSIC` siguen funcionando (si un programa usa una variable `MUSIC`, el nombre se refiere a la variable).
+
+```basic
+MUSIC "TITULO.MOD", LOOP
+DO: LOOP WHILE INKEY$ = ""
+FOR v% = 255 TO 0 STEP -5: MUSIC VOLUME v%: WAIT VSYNC: NEXT    ' fundido de salida
+MUSIC "INICIO.MID"
+DO: LOOP WHILE MUSIC                                            ' espera a que acabe
+```
+
+### SOUND (efectos de sonido)
+
+```
+id% = SOUND archivo$
+SOUND PLAY id%[, canal%][, volumen%][, pan%][, LOOP]
+SOUND STOP [canal%]
+```
+
+Efectos de sonido desde archivos WAV, mezclados con la música y con `PLAY`. El `SOUND frecuencia, duración`
+de QBasic sigue funcionando como siempre.
+
+- `id% = SOUND archivo$` carga un archivo WAV (mono o estéreo, 4000-48000 Hz, 8 o 16 bits) y devuelve su
+  número. Cargar otra vez el mismo archivo devuelve el mismo número, así que se puede hacer dentro de un bucle.
+- `SOUND PLAY` lo toca en uno de los **12 canales** (1-12). Sin `canal%` usa uno libre (o, si están todos
+  ocupados, el que lleva más tiempo sonando). Tocar en un canal ocupado sustituye lo que sonaba en él.
+- `volumen%` 0-255 (por defecto 255); `pan%` de -100 (izquierda) a 100 (derecha), 0 centrado (por defecto).
+  Los argumentos vacíos toman su valor por defecto: `SOUND PLAY boom%, , , -80`.
+- Con `LOOP` el sonido se repite hasta `SOUND STOP` (un motor, la lluvia...).
+- `SOUND STOP canal%` detiene un canal; `SOUND STOP` sin número detiene los 12.
+- Archivo erróneo: *File not found* / *Illegal function call*; canal, volumen o pan fuera de rango o un
+  número que no haya devuelto `SOUND archivo$`: *Illegal function call*.
+
+```basic
+laser% = SOUND "LASER.WAV"
+motor% = SOUND "MOTOR.WAV"
+SOUND PLAY motor%, 1, 120, , LOOP          ' canal 1: el motor, todo el rato
+DO
+    IF MULTIKEY(57) THEN SOUND PLAY laser%, , , (x% - 160) * 100 \ 160   ' desde donde está la nave
+    ...
+LOOP UNTIL MULTIKEY(1)
+SOUND STOP
+```
 
 ### LOADBMP
 
