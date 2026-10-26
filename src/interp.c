@@ -201,7 +201,18 @@ static void frame_free(Frame *f) {
     free(f->arrs);
     free(f->gosub);
     val_free(&f->ret);
+    free(f->cb_dst);
+    free(f->cb_slot);
     free(f);
+}
+
+/* on a normal return: write converted parameter copies back to the caller's variables */
+static void copy_back(Frame *f) {
+    for (int i = 0; i < f->ncb; i++) {
+        Value *dst = f->cb_dst[i];
+        dst->n = fit_num(dst->t, f->own[f->cb_slot[i]].n);
+    }
+    f->ncb = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -443,7 +454,16 @@ static Frame *make_proc_frame(int pi, Expr **args, int nargs) {
             val_init(&f->own[slot], pr->t, pr->udt, 0);
             f->vals[slot] = &f->own[slot];
             if (pr->t == T_UDT) { Value *src = lval(a); val_copy(&f->own[slot], src); }
-            else assign(&f->own[slot], a);
+            else {
+                assign(&f->own[slot], a);
+                if (!p->isdeffn && (a->op == E_VAR || a->op == E_ARR || a->op == E_MEMBER) && IS_NUM(a->type) && IS_NUM(pr->t)) {
+                    f->cb_dst = (Value **)qb_realloc(f->cb_dst, sizeof(Value *) * (size_t)(f->ncb + 1));
+                    f->cb_slot = (int *)qb_realloc(f->cb_slot, sizeof(int) * (size_t)(f->ncb + 1));
+                    f->cb_dst[f->ncb] = lval(a);
+                    f->cb_slot[f->ncb] = slot;
+                    f->ncb++;
+                }
+            }
         }
     }
     for (int i = ns; i < ps->ns; i++) {
@@ -500,6 +520,7 @@ static double call_function(Expr *e) {
         f->ret.s = NULL;
         f->ret.slen = 0;
     } else r = f->ret.n;
+    copy_back(f);
     frame_free(f);
     return r;
 }
@@ -1456,7 +1477,7 @@ static int exec(Frame *f, int pc) {
             case S_EXITPROC:
                 if (f->proc >= 0) {
                     /* free frame for SUBs (functions are freed by caller) */
-                    if (!P->procs[f->proc].isfunc) frame_free(f);
+                    if (!P->procs[f->proc].isfunc) { copy_back(f); frame_free(f); }
                     return RUN_OK;
                 }
                 rs->status = RUN_END;

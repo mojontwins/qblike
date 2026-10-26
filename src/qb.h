@@ -182,6 +182,7 @@ typedef struct Param {
     uint8_t t;
     int udt;
     uint8_t isarray;
+    uint8_t hasas;      /* declared with AS type (then the bare name refers to it whatever its suffix) */
 } Param;
 
 typedef struct Proc {
@@ -318,6 +319,11 @@ typedef struct Frame {
     int ngosub, capgosub;
     Value ret;
     int retpc;
+    /* numeric variables passed to a parameter of another numeric type: the parameter is a converted
+       copy, written back to the caller's variable when the procedure returns (as QBasic does) */
+    Value **cb_dst;
+    int *cb_slot;
+    int ncb;
 } Frame;
 
 enum { RUN_OK = 0, RUN_END, RUN_ERROR, RUN_ABORT, RUN_RESTART };

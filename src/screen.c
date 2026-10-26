@@ -1133,7 +1133,9 @@ void gfx_pset(double x, double y, int color, int hascolor, int step, int preset)
    from the upper end, Bresenham with the error term starting at half the major axis. Being pixel-exact
    matters: programs fill areas by testing POINT along these boundaries. */
 static void raw_line(int x1, int y1, int x2, int y2, int c, int style, int *bit) {
-    if (y2 <= y1) { int t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+    /* only swap when the second point is higher: a horizontal line is drawn from its first point, so a
+       style pattern starts there (MSB first), e.g. LINE (x, y)-(x + 4, y), c, , &HE000 draws ###.. */
+    if (y2 < y1) { int t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
     int dx = abs(x2 - x1), dy = abs(y2 - y1);
     int steep = dy > dx;
     if (steep) { int t = x1; x1 = y1; y1 = t; t = x2; x2 = y2; y2 = t; t = dx; dx = dy; dy = t; }

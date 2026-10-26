@@ -716,7 +716,7 @@ static Expr *parse_call_args(int procidx, Expr *e) {
                     } else if (pr->t == T_STR) { if (a->type != T_STR) cerr("Parameter type mismatch"); }
                     else if (pr->t == T_UDT) { if (a->type != T_UDT || a->udt != pr->udt) cerr("Parameter type mismatch"); }
                     else if (!IS_NUM(a->type)) cerr("Parameter type mismatch");
-                    /* numeric variable of another type: converted and passed by value */
+                    /* numeric variable of another type: passed as a converted copy, written back on return */
                 }
                 addarg(e, a);
                 n++;
@@ -1880,6 +1880,7 @@ static int parse_proc_header(int isfunc, int prescan) {
                         if (pt != T_NONE && pt != t) cerr("Duplicate definition");
                         pr->t = (uint8_t)t;
                         pr->udt = udt;
+                        pr->hasas = 1;
                     }
                     p->nparams++;
                     if (acceptop(',')) continue;
@@ -1910,10 +1911,11 @@ static void begin_proc_body(int pi) {
         Param *pr = &p->params[i];
         int scope;
         char base[48];
-        int st = split_name(pr->name, base, sizeof base);
-        Sym *s = declare_var(pr->name, pr->isarray, pr->t, pr->udt, 0, 0, 0, &scope, st == T_NONE ? 1 : 0);
-        s->declared = 1;
-        (void)s;
+        (void)split_name(pr->name, base, sizeof base);
+        /* only "x AS type" makes the bare name x refer to the parameter whatever the suffix;
+           with t$ the parameter is t$ and a plain t is another (local) variable, as in QBasic */
+        Sym *s = declare_var(pr->name, pr->isarray, pr->t, pr->udt, 0, 0, 0, &scope, pr->hasas);
+        s->declared = pr->hasas;
     }
 }
 
@@ -1985,7 +1987,7 @@ static void compile_def_fn(void) {
                 char pb[48];
                 int pt = split_name(pr->name, pb, sizeof pb);
                 pr->t = (uint8_t)(pt != T_NONE ? pt : default_type(pb));
-                if (acceptkw(KW_AS)) { int u, f; pr->t = (uint8_t)parse_type_name(&u, &f); pr->udt = u; }
+                if (acceptkw(KW_AS)) { int u, f; pr->t = (uint8_t)parse_type_name(&u, &f); pr->udt = u; pr->hasas = 1; }
                 p->nparams++;
                 if (acceptop(',')) continue;
                 break;
