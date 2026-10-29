@@ -1999,10 +1999,15 @@ static int exec(Frame *f, int pc) {
                 char *a, *b; int al, bl;
                 evs(s->e1, &a, &al);
                 evs(s->e2, &b, &bl);
-                FILE *t = fopen(b, "rb");
-                if (t) { fclose(t); free(a); free(b); rt_error(58); }
-                int r = rename(a, b);
+                /* DOS-style names (backslashes, drive letter) and case-insensitive lookup, like OPEN */
+                extern void file_native_name(const char *in, int len, char *out, int outsz, int for_read);
+                char na[1024], nb[1024];
+                file_native_name(a, al, na, sizeof na, 1);
+                file_native_name(b, bl, nb, sizeof nb, 0);
                 free(a); free(b);
+                FILE *t = fopen(nb, "rb");
+                if (t) { fclose(t); rt_error(58); }
+                int r = rename(na, nb);
                 if (r) rt_error(53);
                 pc++;
                 break;

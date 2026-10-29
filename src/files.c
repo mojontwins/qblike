@@ -40,7 +40,19 @@ static void native_name(const char *in, int len, char *out, int outsz, int for_r
 #ifndef _WIN32
     for (int i = 0; i < n; i++) if (out[i] == '\\') out[i] = '/';
     /* strip drive letter */
-    if (n >= 2 && isalpha((unsigned char)out[0]) && out[1] == ':') { memmove(out, out + 2, (size_t)(n - 1)); n -= 2; }
+    if (n >= 2 && isalpha((unsigned char)out[0]) && out[1] == ':') {
+        memmove(out, out + 2, (size_t)(n - 1)); n -= 2;
+        /* C:\GAME\SAVE.DAT: DOS drives don't exist here; if the top directory is not in the
+           file system root, take the path as relative to the current directory */
+        if (out[0] == '/') {
+            char top[512]; int k = 1;
+            while (out[k] && out[k] != '/' && k < 500) { top[k - 1] = out[k]; k++; }
+            top[k - 1] = 0;
+            char probe[520]; snprintf(probe, sizeof probe, "/%s", top);
+            struct stat st0;
+            if (top[0] && stat(probe, &st0) != 0) { memmove(out, out + 1, (size_t)n); n--; }
+        }
+    }
     (void)for_read;
     /* DOS names are case-insensitive: resolve each component of the path against the real
        directory entries (DATA\LEVEL1.DAT finds data/Level1.dat). Missing parts are kept as
