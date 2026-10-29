@@ -14,6 +14,7 @@ The only behavior difference from QBasic is that `PUT` clips the image instead o
 ## Contents
 
 - [New statements](#new-statements)
+  - ['$INCLUDE](#include)
   - [MULTIKEY](#multikey)
   - [MOUSE](#mouse)
   - [PUT ... MASK](#put--mask)
@@ -41,6 +42,43 @@ The only behavior difference from QBasic is that `PUT` clips the image instead o
 ---
 
 ## New statements
+
+### '$INCLUDE
+
+```
+'$INCLUDE "filespec"
+'$INCLUDE: 'filespec'
+```
+
+Pastes the text of another file where the directive is, to share code between programs (pseudo
+libraries). It is not a module system: the file's lines are simply inserted, as if they had been
+typed there. Both the QuickBASIC form (`'$INCLUDE: 'FILE.BI'`, also with `REM`) and the simpler
+`'$INCLUDE "FILE.BI"` are accepted. The directive must be a comment at the start of a line.
+
+- Included files can contain module-level code, `TYPE`, `CONST`, `DECLARE`, `DATA` and `SUB` /
+  `FUNCTION` procedures (they become procedures of the program, although they don't appear in the
+  F2 list), and they can include other files, up to 16 levels deep.
+- The name is relative to the file that contains the directive; DOS-style paths
+  (`'$INCLUDE "LIB\GFX.BI"`) work on every system.
+- Module-level code of an included file runs where the directive is. A library whose module code
+  has labels for `GOSUB` or `ON ... GOSUB` is usually included after `END`.
+- Errors inside included text are reported at the `$INCLUDE` line with the file and line:
+  *Division by zero (LIB\MATH.BI, line 9) in main module, line 1*. The debugger doesn't step
+  into included code.
+- *File > Make EXE File* puts the included text inside the executable: the `.BI` files are not
+  needed to run it.
+
+```basic
+' MAIN.BAS
+'$INCLUDE "LIB\MATH.BI"
+PRINT Area!(2)
+
+' LIB\MATH.BI
+'$INCLUDE: 'CONST.BI'          ' relative to LIB\, defines PI
+FUNCTION Area! (r!)
+    Area! = PI * r! * r!
+END FUNCTION
+```
 
 ### MULTIKEY
 

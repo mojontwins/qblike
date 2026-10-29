@@ -48,9 +48,10 @@ static int run_file(const char *path, int wait_end) {
         }
         return 1;
     }
-    SrcPart *sp = doc_srcparts(&d);
     CompileError err;
-    Program *p = compile_program(sp, d.nparts, &err);
+    int nsp = 0;
+    SrcPart *sp = doc_compile_parts(&d, path, &nsp, &err);
+    Program *p = sp ? compile_program(sp, nsp, &err) : NULL;
     if (!p) {
         char msg[256];
         const char *pn = err.part == 0 ? "main module" : d.parts[err.part].name;
@@ -58,7 +59,7 @@ static int run_file(const char *path, int wait_end) {
         fprintf(stderr, "%s\n", msg);
         if (g_headless_test) { printf("COMPILE ERROR: %s\n", msg); fflush(stdout); }
         else { scr_print(msg, (int)strlen(msg)); scr_newline(); scr_press_any_key(); }
-        free(sp);
+        srcparts_free(sp, nsp);
         doc_free(&d);
         return 2;
     }
@@ -86,7 +87,7 @@ static int run_file(const char *path, int wait_end) {
     }
     rt_free();
     free_program(p);
-    free(sp);
+    srcparts_free(sp, nsp);
     doc_free(&d);
     return exitcode;
 }
@@ -148,16 +149,22 @@ int make_exe(const char *in, const char *out, int flags, int target, char *err, 
     Doc d;
     doc_init(&d);
     if (doc_load_mem(&d, src, (int)n) <= 0) { doc_free(&d); free(src); snprintf(err, (size_t)errsz, "Cannot read %s", in); return 0; }
-    SrcPart *sp = doc_srcparts(&d);
     CompileError ce;
-    Program *p = compile_program(sp, d.nparts, &ce);
+    int nsp = 0;
+    SrcPart *sp = doc_compile_parts(&d, in, &nsp, &ce);
+    Program *p = sp ? compile_program(sp, nsp, &ce) : NULL;
     if (!p) {
         snprintf(err, (size_t)errsz, "%s in %s, line %d", ce.msg, ce.part == 0 ? "main module" : d.parts[ce.part].name, ce.line + 1);
-        free(sp); doc_free(&d); free(src);
+        srcparts_free(sp, nsp); doc_free(&d); free(src);
         return 0;
     }
     free_program(p);
-    free(sp);
+    /* the executable gets the program with its '$INCLUDE files already pasted in */
+    free(src);
+    int tl = 0;
+    src = srcparts_to_text(sp, nsp, &tl);
+    n = tl;
+    srcparts_free(sp, nsp);
     doc_free(&d);
     char rt[1024];
     if (!exepack_find_runtime(target, rt, sizeof rt)) {

@@ -21,7 +21,7 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 - **Emulated hardware**: video memory ([DEF SEG](#kw-def-seg), [PEEK](#kw-peek), [POKE](#kw-poke)), VGA/CGA ports and the AdLib FM synthesizer ([INP](#kw-inp), [OUT](#kw-out)), vertical sync ([WAIT](#kw-wait)), BIOS clock and keyboard flags.
 - **No memory limits**: strings up to 1 GB, arrays up to 64 million elements with LONG subscripts, about 100000 levels of SUB/FUNCTION recursion (see [FRE](#kw-fre)).
 - **Behavior changes**: [PUT](#kw-put) clips images that go off the screen instead of failing; [LEN](#kw-len) and [INSTR](#kw-instr) return LONG.
-- **From QuickBASIC**: [COMMAND\$](#kw-command-s), and stand-alone executables with [Make EXE](#topic-make-exe) (the run-time module qbrun, like BRUN45.EXE).
+- **From QuickBASIC**: [COMMAND\$](#kw-command-s), [\$INCLUDE](#kw--sinclude) (also with a simpler `'$INCLUDE "file"` form), and stand-alone executables with [Make EXE](#topic-make-exe) (the run-time module qbrun, like BRUN45.EXE).
 - **Not available**: [CHAIN](#kw-chain), `CALL ABSOLUTE`/`INTERRUPT`, [RUN](#kw-run) with a file or line, printing ([LPRINT](#kw-lprint) output is discarded), serial ports, light pen and joystick ([COM](#kw-com), [PEN](#kw-pen), [STICK](#kw-stick)), and [KEY](#kw-key) events. They are accepted where possible so old programs still run.
 
 ## Keywords by task
@@ -43,6 +43,8 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 
 <a id="index"></a>
 
+**#** — [\$INCLUDE](#kw--sinclude) · \$INCLUDE: → [\$INCLUDE](#kw--sinclude)
+
 **A** — [ABS](#kw-abs) · ACCESS → [OPEN](#kw-open) · AND → [Operators](#topic-operators) · ANY → [DECLARE](#kw-declare) · APPEND → [OPEN](#kw-open) · AS → [DIM](#kw-dim) · [ASC](#kw-asc) · [ATN](#kw-atn)
 
 **B** — BASE → [OPTION BASE](#kw-option-base) · [BEEP](#kw-beep) · BINARY → [OPEN](#kw-open) · [BLOAD](#kw-bload) · [BSAVE](#kw-bsave)
@@ -59,7 +61,7 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 
 **H** — [HEX\$](#kw-hex-s)
 
-**I** — [IF](#kw-if) · IMP → [Operators](#topic-operators) · [INKEY\$](#kw-inkey-s) · [INP](#kw-inp) · [INPUT](#kw-input) · [INPUT\$](#kw-input-s) · [INSTR](#kw-instr) · [INT](#kw-int) · INTEGER → [DIM](#kw-dim) · [IOCTL](#kw-ioctl) · IOCTL\$ → [IOCTL](#kw-ioctl) · IS → [SELECT](#kw-select)
+**I** — [IF](#kw-if) · IMP → [Operators](#topic-operators) · INCLUDE → [\$INCLUDE](#kw--sinclude) · [INKEY\$](#kw-inkey-s) · [INP](#kw-inp) · [INPUT](#kw-input) · [INPUT\$](#kw-input-s) · [INSTR](#kw-instr) · [INT](#kw-int) · INTEGER → [DIM](#kw-dim) · [IOCTL](#kw-ioctl) · IOCTL\$ → [IOCTL](#kw-ioctl) · IS → [SELECT](#kw-select)
 
 **K** — [KEY](#kw-key) · [KILL](#kw-kill)
 
@@ -182,6 +184,29 @@ QBLike emulates the hardware tricks used by DOS games:
 See also: [INP](#kw-inp), [OUT](#kw-out), [DEF SEG](#kw-def-seg), [GET](#kw-get)
 
 ## Keyword reference
+
+<a id="kw--sinclude"></a>
+
+### $INCLUDE
+
+```
+'$INCLUDE "filespec"
+'$INCLUDE: 'filespec'
+REM $INCLUDE: 'filespec'
+```
+
+Metacommand: pastes the text of another file where the directive is, to share code between programs (pseudo libraries). It must be a comment at the start of a line. Included files can contain module-level code, TYPE, CONST, DECLARE, DATA and SUB / FUNCTION procedures, and can include other files (up to 16 levels). The file name is relative to the file that includes it; DOS-style paths work on every system.
+
+The text is pasted as is: module-level code in an included file runs where the directive is. A library whose module code contains labels or GOSUB targets is usually included after END.
+
+Errors inside included text are reported at the \$INCLUDE line, with the file and line, e.g. Division by zero (LIB\\MATH.BI, line 9). The editor doesn't step into included code. File \> Make EXE puts the included text inside the executable.
+
+```
+'$INCLUDE "LIB\GFX.BI"
+'$INCLUDE: 'QB.BI'
+```
+
+See also: [Make EXE](#topic-make-exe), [DECLARE](#kw-declare)
 
 <a id="kw-abs"></a>
 

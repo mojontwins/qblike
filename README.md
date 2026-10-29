@@ -110,6 +110,7 @@ FILL (x, y), c                             ' NEW: fill the area of the color at 
 MUSIC "SONG.MOD", LOOP                     ' NEW: background music, MOD or MIDI (MUSIC STOP, MUSIC VOLUME v)
 boom = SOUND "BOOM.WAV": SOUND PLAY boom   ' NEW: WAV sound effects, 12 channels with volume and pan
 SCREEN FULL                                ' NEW: full screen (SCREEN WINDOW: back to a window)
+'$INCLUDE "LIB\GFX.BI"                     ' NEW: pastes the text of another file (code libraries)
 ```
 
 In QBLike, `PUT` clips the image instead of raising an error when it goes off the screen (or the `CLIP` area).
@@ -378,6 +379,7 @@ FILL (x, y), c                             ' NUEVO: rellena la zona del color qu
 MUSIC "TEMA.MOD", LOOP                     ' NUEVO: música de fondo, MOD o MIDI (MUSIC STOP, MUSIC VOLUME v)
 boom = SOUND "BOOM.WAV": SOUND PLAY boom   ' NUEVO: efectos de sonido WAV, 12 canales con volumen y pan
 SCREEN FULL                                ' NUEVO: pantalla completa (SCREEN WINDOW: de vuelta a ventana)
+'$INCLUDE "LIB\GFX.BI"                     ' NUEVO: pega el texto de otro archivo (bibliotecas de código)
 ```
 
 En QBLike, `PUT` recorta la imagen en lugar de dar error cuando se sale de la pantalla (o del área de `CLIP`).

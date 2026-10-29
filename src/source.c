@@ -169,8 +169,9 @@ int doc_load(Doc *d, const char *path) {
     return r;
 }
 
-/* load a program from memory (the text of a .BAS file) */
-int doc_load_mem(Doc *d, const char *data, int size) {
+/* split the text of a .BAS file into lines (tabs expanded, UTF-8 converted to CP437).
+   Returns -1 for QuickBASIC binary format, else 1. */
+static int text_to_lines(const char *data, int size, char ***out, int *outn, int *utf8) {
     int pos = 0;
     char **lines = NULL;
     int n = 0, cap = 0;
@@ -244,11 +245,227 @@ int doc_load_mem(Doc *d, const char *data, int size) {
         free(lines);
         return -1;
     }
+    *out = lines; *outn = n; *utf8 = is_utf8;
+    return 1;
+}
+
+/* load a program from memory (the text of a .BAS file) */
+int doc_load_mem(Doc *d, const char *data, int size) {
+    char **lines = NULL;
+    int n = 0, is_utf8 = 0;
+    int r = text_to_lines(data, size, &lines, &n, &is_utf8);
+    if (r < 0) return r;
     doc_from_lines(d, lines, n);
     d->utf8 = is_utf8;
     for (int i = 0; i < n; i++) free(lines[i]);
     free(lines);
     return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* '$INCLUDE: the text of another file pasted where the directive is.  */
+/* Accepted forms (comment at the start of a line):                   */
+/*   '$INCLUDE "FILE.BI"    '$INCLUDE: 'FILE.BI'    REM $INCLUDE: ...  */
+/* Procedures in an included file become procedures of the program.   */
+/* ------------------------------------------------------------------ */
+static char *inc_names[256];
+static int n_inc = 0;
+const char *include_name(int i) { return i >= 0 && i < n_inc ? inc_names[i] : ""; }
+
+/* 1 = directive (file name in out), 2 = malformed directive, 0 = not a directive */
+static int parse_include(const char *line, char *out, int outsz) {
+    const char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\'') p++;
+    else if ((p[0] == 'R' || p[0] == 'r') && (p[1] == 'E' || p[1] == 'e') && (p[2] == 'M' || p[2] == 'm') && (p[3] == ' ' || p[3] == '\t')) p += 3;
+    else return 0;
+    while (*p == ' ' || *p == '\t') p++;
+    static const char kw[] = "$INCLUDE";
+    for (int i = 0; kw[i]; i++) if (toupper((unsigned char)p[i]) != kw[i]) return 0;
+    p += 8;
+    if (isalnum((unsigned char)*p) || *p == '_') return 0;   /* e.g. $INCLUDED */
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == ':') p++;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '"' && *p != '\'') return 2;
+    char q = *p++;
+    int n = 0;
+    while (*p && *p != q && n < outsz - 1) out[n++] = *p++;
+    out[n] = 0;
+    if (*p != q || n == 0) return 2;
+    return 1;
+}
+
+typedef struct XP { SrcPart *v; int n, cap; int *lcap; } XP;
+
+static int xp_new_part(XP *x, int docpart) {
+    if (x->n == x->cap) {
+        x->cap = x->cap ? x->cap * 2 : 16;
+        x->v = (SrcPart *)qb_realloc(x->v, sizeof(SrcPart) * (size_t)x->cap);
+        x->lcap = (int *)qb_realloc(x->lcap, sizeof(int) * (size_t)x->cap);
+    }
+    SrcPart *p = &x->v[x->n];
+    memset(p, 0, sizeof *p);
+    p->docpart = docpart;
+    x->lcap[x->n] = 0;
+    return x->n++;
+}
+
+static void xp_add(XP *x, int part, const char *text, int docline, int incfile, int incline) {
+    SrcPart *p = &x->v[part];
+    if (p->nlines == x->lcap[part]) {
+        int c = x->lcap[part] = x->lcap[part] ? x->lcap[part] * 2 : 64;
+        p->lines = (char **)qb_realloc(p->lines, sizeof(char *) * (size_t)c);
+        p->docline = (int *)qb_realloc(p->docline, sizeof(int) * (size_t)c);
+        p->incfile = (int *)qb_realloc(p->incfile, sizeof(int) * (size_t)c);
+        p->incline = (int *)qb_realloc(p->incline, sizeof(int) * (size_t)c);
+    }
+    p->lines[p->nlines] = qb_strdup(text);
+    p->docline[p->nlines] = docline;
+    p->incfile[p->nlines] = incfile;
+    p->incline[p->nlines] = incline;
+    p->nlines++;
+}
+
+void file_native_name(const char *in, int len, char *out, int outsz, int for_read);
+
+typedef struct XCtx {
+    int docpart;      /* editor part the text belongs to */
+    int fixline;      /* -1: lines are the document's own; else the directive's line */
+    int incfile;      /* -1: the document; else index in inc_names */
+    char dir[512];    /* directory of the file being expanded ("" = current) */
+    int depth;
+} XCtx;
+
+static int expand_lines(XP *x, int target, char **lines, int n, int split, XCtx *cx, CompileError *err);
+
+static int include_file(XP *x, int target, const char *name, int docline, XCtx *cx, CompileError *err) {
+    if (cx->depth >= 16) {
+        snprintf(err->msg, sizeof err->msg, "Too many nested $INCLUDE (%s)", name);
+        return 0;
+    }
+    char joined[1100], path[1100];
+    int absolute = name[0] == '/' || name[0] == '\\' || (name[0] && name[1] == ':');
+    if (cx->dir[0] && !absolute) snprintf(joined, sizeof joined, "%s/%s", cx->dir, name);
+    else snprintf(joined, sizeof joined, "%s", name);
+    file_native_name(joined, (int)strlen(joined), path, sizeof path, 1);
+    FILE *f = fopen(path, "rb");
+    if (!f && cx->dir[0] && !absolute) {   /* also the current directory */
+        file_native_name(name, (int)strlen(name), path, sizeof path, 1);
+        f = fopen(path, "rb");
+    }
+    if (!f) { snprintf(err->msg, sizeof err->msg, "File not found: %s ($INCLUDE)", name); return 0; }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *data = (char *)qb_alloc((size_t)(sz > 0 ? sz : 0) + 1);
+    long got = sz > 0 ? (long)fread(data, 1, (size_t)sz, f) : 0;
+    fclose(f);
+    char **lines = NULL; int nl = 0, u8 = 0;
+    int r = text_to_lines(data, (int)got, &lines, &nl, &u8);
+    free(data);
+    if (r < 0) { snprintf(err->msg, sizeof err->msg, "%s: QuickBASIC binary format ($INCLUDE)", name); return 0; }
+    XCtx sub = *cx;
+    sub.fixline = docline;
+    if (n_inc < 256) { inc_names[n_inc] = qb_strdup(name); sub.incfile = n_inc++; }
+    else sub.incfile = 255;
+    snprintf(sub.dir, sizeof sub.dir, "%s", path);
+    char *sl = strrchr(sub.dir, '/'), *bs = strrchr(sub.dir, '\\');
+    if (bs && (!sl || bs > sl)) sl = bs;
+    if (sl) *sl = 0; else sub.dir[0] = 0;
+    sub.depth = cx->depth + 1;
+    int ok = expand_lines(x, target, lines, nl, 1, &sub, err);
+    for (int i = 0; i < nl; i++) free(lines[i]);
+    free(lines);
+    return ok;
+}
+
+static int expand_lines(XP *x, int target, char **lines, int n, int split, XCtx *cx, CompileError *err) {
+    int cur = target;           /* where module-level lines go */
+    int inproc = -1;            /* part of the procedure being collected (included files only) */
+    for (int i = 0; i < n; i++) {
+        int dl = cx->fixline >= 0 ? cx->fixline : i;
+        int dest = inproc >= 0 ? inproc : cur;
+        if (split && inproc < 0) {
+            int c = classify_line(lines[i], NULL, 0);
+            if (c == 1 || c == 2) { inproc = xp_new_part(x, cx->docpart); dest = inproc; }
+        }
+        char name[512];
+        int d = parse_include(lines[i], name, sizeof name);
+        if (d == 2) {
+            err->part = cx->docpart; err->line = dl;
+            snprintf(err->msg, sizeof err->msg, "Expected: $INCLUDE: 'file' or $INCLUDE \"file\"");
+            return 0;
+        }
+        if (d == 1) {
+            /* keep the directive as a comment that can't be expanded again */
+            char done[1100];
+            snprintf(done, sizeof done, "' (included: %s)", name);
+            xp_add(x, dest, done, dl, cx->incfile, i);
+            if (!include_file(x, dest, name, dl, cx, err)) {
+                err->part = cx->docpart; err->line = dl;
+                return 0;
+            }
+            continue;
+        }
+        xp_add(x, dest, lines[i], dl, cx->incfile, i);
+        if (inproc >= 0 && classify_line(lines[i], NULL, 0) == 3) inproc = -1;
+    }
+    return 1;
+}
+
+/* the parts given to the compiler, with every '$INCLUDE expanded. basepath: the program file
+   (for relative include names), or NULL. Returns NULL with err set if an include fails. */
+SrcPart *doc_compile_parts(Doc *d, const char *basepath, int *nparts, CompileError *err) {
+    for (int i = 0; i < n_inc; i++) free(inc_names[i]);
+    n_inc = 0;
+    memset(err, 0, sizeof *err);
+    XP x; memset(&x, 0, sizeof x);
+    XCtx cx; memset(&cx, 0, sizeof cx);
+    if (basepath && basepath[0]) {
+        snprintf(cx.dir, sizeof cx.dir, "%s", basepath);
+        char *sl = strrchr(cx.dir, '/'), *bs = strrchr(cx.dir, '\\');
+        if (bs && (!sl || bs > sl)) sl = bs;
+        if (sl) *sl = 0; else cx.dir[0] = 0;
+    }
+    /* the document's own parts keep their indices; included procedures are added after them */
+    for (int p = 0; p < d->nparts; p++) xp_new_part(&x, p);
+    for (int p = 0; p < d->nparts; p++) {
+        cx.docpart = p; cx.fixline = -1; cx.incfile = -1; cx.depth = 0;
+        if (!expand_lines(&x, p, d->parts[p].lines, d->parts[p].n, 0, &cx, err)) {
+            srcparts_free(x.v, x.n);
+            free(x.lcap);
+            return NULL;
+        }
+    }
+    free(x.lcap);
+    *nparts = x.n;
+    return x.v;
+}
+
+void srcparts_free(SrcPart *sp, int n) {
+    if (!sp) return;
+    for (int i = 0; i < n; i++) {
+        for (int k = 0; k < sp[i].nlines; k++) free(sp[i].lines[k]);
+        free(sp[i].lines); free(sp[i].docline); free(sp[i].incfile); free(sp[i].incline);
+    }
+    free(sp);
+}
+
+/* the expanded program as one text (for Make EXE: the executable doesn't need the files) */
+char *srcparts_to_text(SrcPart *sp, int n, int *len) {
+    size_t cap = 4096, l = 0;
+    char *t = (char *)qb_alloc(cap);
+    for (int i = 0; i < n; i++)
+        for (int k = 0; k < sp[i].nlines; k++) {
+            size_t sl = strlen(sp[i].lines[k]);
+            while (l + sl + 3 > cap) { cap *= 2; t = (char *)qb_realloc(t, cap); }
+            memcpy(t + l, sp[i].lines[k], sl); l += sl;
+            t[l++] = '\r'; t[l++] = '\n';
+        }
+    t[l] = 0;
+    *len = (int)l;
+    return t;
 }
 
 int cp437_to_unicode(int c);
@@ -334,6 +551,6 @@ int doc_save(Doc *d, const char *path) {
 /* build compiler input */
 SrcPart *doc_srcparts(Doc *d) {
     SrcPart *sp = (SrcPart *)qb_alloc(sizeof(SrcPart) * (size_t)d->nparts);
-    for (int i = 0; i < d->nparts; i++) { sp[i].lines = d->parts[i].lines; sp[i].nlines = d->parts[i].n; }
+    for (int i = 0; i < d->nparts; i++) { sp[i].lines = d->parts[i].lines; sp[i].nlines = d->parts[i].n; sp[i].docpart = i; }
     return sp;
 }

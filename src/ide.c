@@ -1607,10 +1607,11 @@ int compile_check(SrcPart *parts, int nparts, CompileError *err);
 static void draw_background(void) { draw_all(); }
 
 static int syntax_check_line(int part, int line, char *msg, int msgsz, int *col) {
-    SrcPart *sp = doc_srcparts(&doc);
     CompileError err;
-    int ok = compile_check(sp, doc.nparts, &err);
-    free(sp);
+    int nsp = 0;
+    SrcPart *sp = doc_compile_parts(&doc, filename, &nsp, &err);
+    int ok = sp ? compile_check(sp, nsp, &err) : 0;
+    srcparts_free(sp, nsp);
     if (ok) return 1;
     if (err.part != part || err.line != line) return 1;
     if (strstr(err.msg, "without") || strstr(err.msg, "not defined") || strstr(err.msg, "Duplicate label")) return 1;
@@ -1638,10 +1639,11 @@ static int compile_doc(void) {
     rt_free();
     if (prog) { free_program(prog); prog = NULL; }
     prog_valid = 0;
-    SrcPart *sp = doc_srcparts(&doc);
     CompileError err;
-    prog = compile_program(sp, doc.nparts, &err);
-    free(sp);
+    int nsp = 0;
+    SrcPart *sp = doc_compile_parts(&doc, filename, &nsp, &err);
+    prog = sp ? compile_program(sp, nsp, &err) : NULL;
+    srcparts_free(sp, nsp);
     if (!prog) {
         goto_location(err.part, err.line, err.col);
         show_message(err.msg, 1);
@@ -1955,12 +1957,13 @@ static int imm_exec(const char *line) {
     commit_line();
     if (!suspended) {
         if (!prog || !prog_valid) {
-            SrcPart *sp = doc_srcparts(&doc);
             CompileError err;
+            int nsp = 0;
+            SrcPart *sp = doc_compile_parts(&doc, filename, &nsp, &err);
             rt_free();
             if (prog) free_program(prog);
-            prog = compile_program(sp, doc.nparts, &err);
-            free(sp);
+            prog = sp ? compile_program(sp, nsp, &err) : NULL;
+            srcparts_free(sp, nsp);
             if (!prog) {
                 /* fall back to an empty program so immediate statements still work */
                 char *empty[1] = { (char *)"" };

@@ -257,7 +257,7 @@ def main():
              'about 100000 levels of SUB/FUNCTION recursion (see ' + lk.link('FRE') + ').')
     o.append('- **Behavior changes**: ' + lk.link('PUT') + ' clips images that go off the screen instead of '
              'failing; ' + lk.link('LEN') + ' and ' + lk.link('INSTR') + ' return LONG.')
-    o.append('- **From QuickBASIC**: ' + lk.link('COMMAND$') + ', and stand-alone executables with '
+    o.append('- **From QuickBASIC**: ' + lk.link('COMMAND$') + ', ' + lk.link('$INCLUDE') + ' (also with a simpler `\'$INCLUDE "file"` form), and stand-alone executables with '
              + lk.link('Make EXE') + ' (the run-time module qbrun, like BRUN45.EXE).')
     o.append('- **Not available**: ' + lk.link('CHAIN') + ', `CALL ABSOLUTE`/`INTERRUPT`, ' + lk.link('RUN')
              + ' with a file or line, printing (' + lk.link('LPRINT') + ' output is discarded), serial ports, '

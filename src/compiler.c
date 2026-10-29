@@ -1,5 +1,6 @@
 /* compiler.c - parses QBasic source into statement/expression trees */
 #include "qb.h"
+#include "source.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -55,6 +56,7 @@ typedef struct C {
     TokLine tl;
     int pos;
     int part, line;
+    SrcPart *src;       /* the parts being compiled (for '$INCLUDE line mapping) */
     int proc;           /* -1 module */
     SymTab *lsyms;
     char deftype[26];
@@ -105,6 +107,19 @@ static void cerr_at(int col, const char *fmt, ...) {
     cc->err->part = cc->part;
     cc->err->line = cc->line;
     cc->err->col = col;
+    if (cc->src) {   /* report it in the editor's terms; for included text, say where */
+        SrcPart *sp = &cc->src[cc->part];
+        cc->err->part = sp->docpart;
+        if (sp->docline && cc->line >= 0 && cc->line < sp->nlines) {
+            cc->err->line = sp->docline[cc->line];
+            if (sp->incfile[cc->line] >= 0) {
+                char tmp[128];
+                snprintf(tmp, sizeof tmp, "%s (%s, line %d)", cc->err->msg, include_name(sp->incfile[cc->line]), sp->incline[cc->line] + 1);
+                snprintf(cc->err->msg, sizeof cc->err->msg, "%s", tmp);
+                cc->err->col = 0;
+            }
+        }
+    }
     longjmp(cc->jb, 1);
 }
 #define cerr(...) cerr_at(cur()->col, __VA_ARGS__)
@@ -1069,7 +1084,20 @@ static int emit(int op) {
     s->op = (uint16_t)op;
     s->part = (uint16_t)cc->part;
     s->line = cc->line;
-    if (!cc->lineemitted) { s->linestart = 1; cc->lineemitted = 1; }
+    s->incfile = -1;
+    int included = 0;
+    if (cc->src) {
+        SrcPart *sp = &cc->src[cc->part];
+        s->part = (uint16_t)sp->docpart;
+        if (sp->docline && cc->line >= 0 && cc->line < sp->nlines) {
+            s->line = sp->docline[cc->line];
+            s->incfile = (int16_t)sp->incfile[cc->line];
+            s->incline = sp->incline[cc->line];
+            included = s->incfile >= 0;
+        }
+    }
+    /* included code has no lines of its own in the editor: no stepping or breakpoints inside it */
+    if (!cc->lineemitted) { s->linestart = included ? 0 : 1; cc->lineemitted = 1; }
     return P->ncode++;
 }
 #define ST(i) (&cc->P->code[(i)])
@@ -3154,6 +3182,7 @@ Program *compile_program(SrcPart *parts, int nparts, CompileError *err) {
     Program *P = (Program *)qb_alloc(sizeof(Program));
     init_c(&c, P, err);
     cc = &c;
+    c.src = parts;
     memset(err, 0, sizeof *err);
     g_prog = P;
     for (int i = 0; i < 26; i++) P->deftype[i] = T_SNG;

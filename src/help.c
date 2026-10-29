@@ -8,6 +8,7 @@
 typedef struct HelpEnt { const char *name; const char *syntax; const char *text; const char *see; } HelpEnt;
 
 static const HelpEnt H[] = {
+{ "$INCLUDE", "'$INCLUDE \"filespec\"\n'$INCLUDE: 'filespec'\nREM $INCLUDE: 'filespec'", "Metacommand: pastes the text of another file where the directive is,\nto share code between programs (pseudo libraries). It must be a comment\nat the start of a line. Included files can contain module-level code,\nTYPE, CONST, DECLARE, DATA and SUB / FUNCTION procedures, and can include\nother files (up to 16 levels). The file name is relative to the file that\nincludes it; DOS-style paths work on every system.\n\nThe text is pasted as is: module-level code in an included file runs\nwhere the directive is. A library whose module code contains labels or\nGOSUB targets is usually included after END.\n\nErrors inside included text are reported at the $INCLUDE line, with the\nfile and line, e.g. Division by zero (LIB\\MATH.BI, line 9). The editor\ndoesn't step into included code. File > Make EXE puts the included text\ninside the executable.\n\n  '$INCLUDE \"LIB\\GFX.BI\"\n  '$INCLUDE: 'QB.BI'", "Make EXE DECLARE" },
 { "ABS", "ABS(numeric-expression)", "Returns the absolute value of a number.\n\n  PRINT ABS(-5.5)     ' 5.5", "SGN" },
 { "ASC", "ASC(stringexpression$)", "Returns the ASCII code (0-255) of the first character of a string.\nIllegal function call if the string is empty.\n\n  PRINT ASC(\"A\")      ' 65", "CHR$" },
 { "ATN", "ATN(numeric-expression)", "Returns the arctangent of a number, in radians (-PI/2 to PI/2).\nPI can be computed as 4 * ATN(1).", "COS SIN TAN" },
@@ -198,7 +199,7 @@ static const char *aliases[][2] = {
     { "EQV", "Operators" }, { "IMP", "Operators" }, { "SEG", "DEF SEG" }, { "PRESERVE", "REDIM" }, { "?", "PRINT" },
     { "ACCESS", "OPEN" }, { "APPEND", "OPEN" }, { "BINARY", "OPEN" }, { "OUTPUT", "OPEN" }, { "RANDOM", "OPEN" },
     { "ANY", "DECLARE" }, { "OFF", "ON TIMER" }, { "LIST", "KEY" }, { "UNLOCK", "LOCK" }, { "RSET", "LSET" },
-    { "STRIG", "STICK" }, { "MAKE", "Make EXE" }, { "EXE", "Make EXE" }, { "CVDMBF", "CVSMBF" }, { "MKSMBF$", "CVSMBF" }, { "MKDMBF$", "CVSMBF" },
+    { "STRIG", "STICK" }, { "MAKE", "Make EXE" }, { "INCLUDE", "$INCLUDE" }, { "$INCLUDE:", "$INCLUDE" }, { "EXE", "Make EXE" }, { "CVDMBF", "CVSMBF" }, { "MKSMBF$", "CVSMBF" }, { "MKDMBF$", "CVSMBF" },
     { "ENVIRON$", "ENVIRON" }, { "ERDEV$", "ERDEV" }, { "IOCTL$", "IOCTL" }, { "LPOS", "LPRINT" },
     { NULL, NULL }
 };

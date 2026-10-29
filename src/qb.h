@@ -178,6 +178,8 @@ typedef struct Stmt {
     int nargs;
     void *p;
     uint8_t linestart;  /* first statement of a source line */
+    int16_t incfile;    /* '$INCLUDE file the statement comes from (-1 = none) */
+    int incline;        /* line in that file */
 } Stmt;
 
 typedef struct Param {
@@ -265,6 +267,11 @@ typedef struct Program {
 typedef struct SrcPart {
     char **lines;
     int nlines;
+    /* where the lines come from ('$INCLUDE): NULL arrays = the document part with the same index */
+    int docpart;        /* editor part */
+    int *docline;       /* per line: line in that part (the $INCLUDE line for included text) */
+    int *incfile;       /* per line: included file (include_name), -1 = the document itself */
+    int *incline;       /* per line: line in the included file */
 } SrcPart;
 
 typedef struct CompileError {

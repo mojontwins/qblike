@@ -62,9 +62,10 @@ int main(int argc, char *argv[]) {
     Doc d;
     doc_init(&d);
     if (doc_load_mem(&d, prog_src, prog_len) <= 0) { show_error("Bad program"); return 1; }
-    SrcPart *sp = doc_srcparts(&d);
     CompileError err;
-    Program *p = compile_program(sp, d.nparts, &err);
+    int nsp = 0;
+    SrcPart *sp = doc_compile_parts(&d, NULL, &nsp, &err);
+    Program *p = sp ? compile_program(sp, nsp, &err) : NULL;
     if (!p) {
         char msg[256];
         snprintf(msg, sizeof msg, "%s in %s, line %d", err.msg, err.part == 0 ? "main module" : d.parts[err.part].name, err.line + 1);

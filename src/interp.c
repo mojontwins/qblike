@@ -2322,6 +2322,12 @@ int rt_run(Program *p, int startpc) {
             }
             rs->errpart = p->code[errpc].part;
             rs->errline = p->code[errpc].line;
+            if (p->code[errpc].incfile >= 0) {   /* error inside '$INCLUDE text: say where */
+                extern const char *include_name(int i);
+                char tmp[128];
+                snprintf(tmp, sizeof tmp, "%s (%s, line %d)", rs->errmsg, include_name(p->code[errpc].incfile), p->code[errpc].incline + 1);
+                snprintf(rs->errmsg, sizeof rs->errmsg, "%s", tmp);
+            }
             rs->status = RUN_ERROR;
             break;
         }

@@ -13,6 +13,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
 ## Índice
 
 - [Instrucciones nuevas](#instrucciones-nuevas)
+  - ['$INCLUDE](#include)
   - [MULTIKEY](#multikey)
   - [MOUSE](#mouse)
   - [PUT ... MASK](#put--mask)
@@ -40,6 +41,45 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
 ---
 
 ## Instrucciones nuevas
+
+### '$INCLUDE
+
+```
+'$INCLUDE "archivo"
+'$INCLUDE: 'archivo'
+```
+
+Pega el texto de otro archivo donde está la directiva, para compartir código entre programas
+(pseudo bibliotecas). No es un sistema de módulos: las líneas del archivo simplemente se insertan,
+como si se hubieran escrito ahí. Se aceptan la forma de QuickBASIC (`'$INCLUDE: 'ARCHIVO.BI'`,
+también con `REM`) y la más sencilla `'$INCLUDE "ARCHIVO.BI"`. La directiva debe ser un comentario al
+principio de una línea.
+
+- Los archivos incluidos pueden contener código del módulo, `TYPE`, `CONST`, `DECLARE`, `DATA` y
+  procedimientos `SUB` / `FUNCTION` (pasan a ser procedimientos del programa, aunque no aparecen en
+  la lista de F2), y pueden incluir otros archivos, hasta 16 niveles.
+- El nombre es relativo al archivo que contiene la directiva; las rutas estilo DOS
+  (`'$INCLUDE "LIB\GFX.BI"`) funcionan en todos los sistemas.
+- El código del módulo de un archivo incluido se ejecuta donde está la directiva. Una biblioteca
+  cuyo código del módulo tiene etiquetas para `GOSUB` u `ON ... GOSUB` suele incluirse después de
+  `END`.
+- Los errores dentro del texto incluido se indican en la línea del `$INCLUDE` con el archivo y la
+  línea: *Division by zero (LIB\MATH.BI, line 9) in main module, line 1*. El depurador no entra
+  en el código incluido.
+- *File > Make EXE File* mete el texto incluido dentro del ejecutable: los archivos `.BI` no hacen
+  falta para ejecutarlo.
+
+```basic
+' MAIN.BAS
+'$INCLUDE "LIB\MATH.BI"
+PRINT Area!(2)
+
+' LIB\MATH.BI
+'$INCLUDE: 'CONST.BI'          ' relativo a LIB\, define PI
+FUNCTION Area! (r!)
+    Area! = PI * r! * r!
+END FUNCTION
+```
 
 ### MULTIKEY
 

@@ -31,5 +31,9 @@ int  doc_save(Doc *d, const char *path);
 void doc_from_lines(Doc *d, char **lines, int n);
 int  classify_line(const char *line, char *name, int namesz);
 SrcPart *doc_srcparts(Doc *d);
+SrcPart *doc_compile_parts(Doc *d, const char *basepath, int *nparts, CompileError *err);
+void srcparts_free(SrcPart *sp, int n);
+char *srcparts_to_text(SrcPart *sp, int n, int *len);
+const char *include_name(int i);
 
 #endif
