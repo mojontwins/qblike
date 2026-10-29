@@ -24,6 +24,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [LOADGIF](#loadgif)
   - [LOADPAL](#loadpal)
   - [SCREEN 3 (PCjr / Tandy 1000)](#screen-3-pcjr--tandy-1000)
+  - [SCREEN FULL / SCREEN WINDOW](#screen-full--screen-window)
 - [Hardware emulado](#hardware-emulado)
   - [Memoria de vídeo (PEEK / POKE)](#memoria-de-vídeo-peek--poke), incluidos los modos planares EGA/VGA
   - [Sincronización vertical (INP &H3DA, WAIT, WAIT VSYNC)](#sincronización-vertical-inp-h3da-wait-wait-vsync)
@@ -446,6 +447,27 @@ DEF SEG = &HB800
 POKE 8192 + 40 * 80 + 30, &H9A     ' línea 81: píxel 60 = color 9, píxel 61 = color 10
 BSAVE "TANDY.PIC", 0, 16384
 DEF SEG
+```
+
+### SCREEN FULL / SCREEN WINDOW
+
+```
+SCREEN FULL
+SCREEN WINDOW
+```
+
+Pasan QBLike a pantalla completa o a una ventana desde el programa, igual que pulsar Alt+Intro o F11.
+El modo de pantalla, su contenido y la paleta no cambian, y el programa sigue enseguida. El estado se
+mantiene al terminar el programa; el usuario siempre puede cambiarlo con Alt+Intro.
+
+`FULL` no es una palabra reservada: en un programa con una variable llamada `FULL`, `SCREEN full`
+sigue fijando el modo de pantalla guardado en esa variable.
+
+```basic
+SCREEN 13
+SCREEN FULL                ' el juego a pantalla completa
+...
+SCREEN WINDOW              ' de vuelta a una ventana antes de mostrar las puntuaciones
 ```
 
 ---

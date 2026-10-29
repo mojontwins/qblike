@@ -319,6 +319,11 @@ static int fill_stmt_at(TokLine *tl, int i) {
         return i > 0 && tl->t[i - 1].k == TK_KW && tl->t[i - 1].kw == KW_WAIT &&
                (!n || n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE));
     }
+    if (qb_stricmp(t->s, "FULL") == 0) {              /* SCREEN FULL */
+        Tok *n = i + 1 < tl->n ? &tl->t[i + 1] : NULL;
+        return i > 0 && tl->t[i - 1].k == TK_KW && tl->t[i - 1].kw == KW_SCREEN &&
+               (!n || n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE));
+    }
     if (qb_stricmp(t->s, "VOLUME") == 0)               /* MUSIC VOLUME */
         return i > 0 && fill_stmt_at(tl, i - 1) && qb_stricmp(tl->t[i - 1].s, "MUSIC") == 0 &&
                i + 1 < tl->n && tl->t[i + 1].k != TK_EOL && tl->t[i + 1].k != TK_REM &&

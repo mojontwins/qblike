@@ -17,7 +17,7 @@ For a guided description of the extensions and the emulated hardware, see [EXTEN
 
 Programs written for QBasic 1.1 run unchanged. The differences are:
 
-- **Extensions** (new statements and functions): [CLIP](#kw-clip), [FILL](#kw-fill), [LOADBMP](#kw-loadbmp), [LOADGIF](#kw-loadgif), [LOADPAL](#kw-loadpal), [MOUSE](#kw-mouse), [MULTIKEY](#kw-multikey), [MUSIC](#kw-music); also [PUT](#kw-put) `MASK`, [WAIT](#kw-wait) `VSYNC`, [SOUND](#kw-sound) `file$` / `SOUND PLAY` / `SOUND STOP`, and `SCREEN 3` (PCjr/Tandy, see [SCREEN](#kw-screen)).
+- **Extensions** (new statements and functions): [CLIP](#kw-clip), [FILL](#kw-fill), [LOADBMP](#kw-loadbmp), [LOADGIF](#kw-loadgif), [LOADPAL](#kw-loadpal), [MOUSE](#kw-mouse), [MULTIKEY](#kw-multikey), [MUSIC](#kw-music); also [PUT](#kw-put) `MASK`, [WAIT](#kw-wait) `VSYNC`, [SOUND](#kw-sound) `file$` / `SOUND PLAY` / `SOUND STOP`, `SCREEN FULL` / `SCREEN WINDOW` and `SCREEN 3` (PCjr/Tandy), see [SCREEN](#kw-screen).
 - **Emulated hardware**: video memory ([DEF SEG](#kw-def-seg), [PEEK](#kw-peek), [POKE](#kw-poke)), VGA/CGA ports and the AdLib FM synthesizer ([INP](#kw-inp), [OUT](#kw-out)), vertical sync ([WAIT](#kw-wait)), BIOS clock and keyboard flags.
 - **No memory limits**: strings up to 1 GB, arrays up to 64 million elements with LONG subscripts, about 100000 levels of SUB/FUNCTION recursion (see [FRE](#kw-fre)).
 - **Behavior changes**: [PUT](#kw-put) clips images that go off the screen instead of failing; [LEN](#kw-len) and [INSTR](#kw-instr) return LONG.
@@ -2322,6 +2322,7 @@ See also: [END](#kw-end)
 
 ```
 SCREEN mode% [,[colorswitch%] [,[activepage%] [,visualpage%]]]
+SCREEN FULL | WINDOW
 
 SCREEN(row%, column% [,colorflag%])   (function)
 ```
@@ -2342,6 +2343,8 @@ Sets the screen mode.
 SCREEN 2 with OUT &H3D8, 26 turns the CGA color burst on: composite artifact colors, each group of 4 pixels shown as one of 16 colors. OUT &H3D8, 30 turns it off again.
 
 SCREEN 3 (PCjr/Tandy 1000): pixels are twice as wide as tall, 20x25 text. Memory at &HB800: 2 pixels per byte (high nibble = left), even lines at offset 0 and odd lines at &H2000, 80 bytes per line.
+
+SCREEN FULL and SCREEN WINDOW (QBLike extension) switch QBLike to full screen or to a window, like Alt+Enter or F11. The screen mode and its contents don't change. FULL is not a reserved word: if the program has a variable called FULL, SCREEN full sets the mode in that variable.
 
 The function SCREEN(row, col) returns the character code at a position.
 

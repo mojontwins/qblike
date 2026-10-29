@@ -2501,6 +2501,19 @@ static void compile_statement(void) {
             return;
         }
         case KW_SCREEN: {
+            /* SCREEN FULL / SCREEN WINDOW (QBLike): fullscreen or windowed. FULL is not reserved: a
+               program with a variable called FULL keeps SCREEN full meaning the screen mode */
+            if (iskw(KW_WINDOW) || (cur()->k == TK_ID && str_ieq(cur()->s, "FULL"))) {
+                Tok *n = peekn(1);
+                int alone = n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':') || (n->k == TK_KW && n->kw == KW_ELSE);
+                int sc;
+                if (alone && (iskw(KW_WINDOW) || !resolve_var(cur()->s, 0, 0, &sc))) {
+                    int si = emit(S_FULLSCREEN);
+                    ST(si)->i1 = iskw(KW_WINDOW) ? 0 : 1;
+                    adv();
+                    return;
+                }
+            }
             int si = emit(S_SCREEN);
             for (int i = 0; i < 4; i++) {
                 Expr *x = NULL;

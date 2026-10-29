@@ -43,7 +43,9 @@ void getpal( int index, int* r, int* g, int* b );
 int shuttingdown( void );
 void setcrtmode( int enabled ); /* QBLike addition: toggle CRT emulation at run time */
 /* QBLike additions: OPL chip driven by register writes (AdLib/Sound Blaster ports) */
-double dos_clock( void );                            /* monotonic seconds, same clock for the timestamps */
+double dos_clock( void );
+void dos_setfullscreen( int on );   /* QBLike: 1 fullscreen, 0 window (applied on the next frame) */
+int dos_isfullscreen( void );                            /* monotonic seconds, same clock for the timestamps */
 void dos_opl_write( double time, int reg, int val ); /* reg 0x000-0x1FF, played ~80 ms after 'time' */
 void dos_opl_silence( double time );                 /* key off all channels, reset to OPL2 defaults */
 
@@ -3156,6 +3158,12 @@ static int qbl_win_to_bmp( qbl_map_t const* m, int wx, int wy, int* bx, int* by 
     return *bx >= 0 && *by >= 0 && *bx < m->bmp_w && *by < m->bmp_h;
 }
 
+/* QBLike: SCREEN FULL / SCREEN WINDOW from the program thread, applied by the app loop */
+static volatile int qbl_fs_request = -1;   /* -1 nothing, 0 window, 1 fullscreen */
+static volatile int qbl_fs_state = 0;
+void dos_setfullscreen( int on ) { qbl_fs_request = on ? 1 : 0; }
+int dos_isfullscreen( void ) { return qbl_fs_state; }
+
 static int app_proc( app_t* app, void* user_data ) {
     struct app_context_t* app_context = (struct app_context_t*) user_data;
    
@@ -3328,6 +3336,19 @@ static int app_proc( app_t* app, void* user_data ) {
         memset( chars, 0, sizeof( chars ) );
         float relx = 0;
         float rely = 0;
+        if( qbl_fs_request >= 0 ) {   /* QBLike: SCREEN FULL / SCREEN WINDOW */
+            bool want = qbl_fs_request == 1;
+            qbl_fs_request = -1;
+            if( want != fullscreen ) {
+                fullscreen = want;
+                app_screenmode( app, fullscreen ? APP_SCREENMODE_FULLSCREEN : APP_SCREENMODE_WINDOW );
+                #ifdef DISABLE_SYSTEM_CURSOR
+                    APP_U32 blank = 0;
+                    app_pointer( app, 1, 1, &blank, 0, 0 );
+                #endif
+            }
+        }
+        qbl_fs_state = fullscreen ? 1 : 0;
         app_input_t input = app_input( app );
         for( int i = 0; i < input.count; ++i ) {
             app_input_event_t* event = &input.events[ i ];

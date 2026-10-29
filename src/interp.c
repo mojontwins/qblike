@@ -1840,6 +1840,13 @@ static int exec(Frame *f, int pc) {
                 break;
             }
             case S_PCOPY: gfx_pcopy((int)qb_round_even(evn(s->e1)), (int)qb_round_even(evn(s->e2))); pc++; break;
+            case S_FULLSCREEN: {
+                dos_setfullscreen(s->i1);
+                /* wait (briefly) for the window to change, so the next statements see the new state */
+                for (int k = 0; k < 50 && dos_isfullscreen() != s->i1 && !g_headless_test; k++) { scr_present(1); sys_sleep(10); }
+                pc++;
+                break;
+            }
             case S_BEEP: snd_beep(); pc++; break;
             case S_MUSIC: {
                 if (s->i1 == 1) snd_music_stop();

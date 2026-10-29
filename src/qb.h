@@ -289,7 +289,7 @@ enum {
     S_PCOPY, S_POKE, S_DEFSEG, S_OUT, S_WAIT, S_MIDSTMT, S_LSET, S_RSET, S_STOP,
     S_SYSTEM, S_CLEAR, S_SELECT, S_CASE, S_EXITPROC, S_LETFUNC, S_TRON, S_TROFF,
     S_KEY, S_ONTIMER, S_TIMERCTL, S_ONKEY, S_KEYCTL, S_RUN, S_SHELL, S_LPRINT,
-    S_FIELD, S_FNRET, S_ONPLAY, S_RESET, S_CHAIN, S_LOCK, S_ENVIRON, S_BLOAD, S_BSAVE, S_LOADIMG, S_LOADPAL, S_CLIP, S_MOUSE, S_FILL, S_VSYNC, S_PLAYCTL, S_MUSIC, S_SNDPLAY, S_SNDSTOP,
+    S_FIELD, S_FNRET, S_ONPLAY, S_RESET, S_CHAIN, S_LOCK, S_ENVIRON, S_BLOAD, S_BSAVE, S_LOADIMG, S_LOADPAL, S_CLIP, S_MOUSE, S_FILL, S_VSYNC, S_PLAYCTL, S_MUSIC, S_SNDPLAY, S_SNDSTOP, S_FULLSCREEN,
     S_COUNT
 };
 
@@ -478,6 +478,8 @@ void snd_music_play(const char *name, int nl, int loop);
 void snd_music_stop(void);
 void snd_music_volume(int v);
 int  snd_music_playing(void);
+void dos_setfullscreen(int on);   /* dos-like: 1 fullscreen, 0 window */
+int  dos_isfullscreen(void);
 void opl_ports_reset(void);   /* AdLib ports: reset timers, key off all FM voices */
 int  snd_playfn(void);
 void snd_stop(void);

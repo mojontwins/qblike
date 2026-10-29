@@ -249,7 +249,7 @@ def main():
     o.append('- **Extensions** (new statements and functions): '
              + ', '.join(lk.link(e['name']) for e in ext)
              + '; also ' + lk.link('PUT') + ' `MASK`, ' + lk.link('WAIT') + ' `VSYNC`, ' + lk.link('SOUND')
-             + ' `file$` / `SOUND PLAY` / `SOUND STOP`, and `SCREEN 3` (PCjr/Tandy, see ' + lk.link('SCREEN') + ').')
+             + ' `file$` / `SOUND PLAY` / `SOUND STOP`, `SCREEN FULL` / `SCREEN WINDOW` and `SCREEN 3` (PCjr/Tandy), see ' + lk.link('SCREEN') + '.')
     o.append('- **Emulated hardware**: video memory (' + lk.link('DEF SEG') + ', ' + lk.link('PEEK') + ', '
              + lk.link('POKE') + '), VGA/CGA ports and the AdLib FM synthesizer (' + lk.link('INP') + ', '
              + lk.link('OUT') + '), vertical sync (' + lk.link('WAIT') + '), BIOS clock and keyboard flags.')
