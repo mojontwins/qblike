@@ -178,7 +178,8 @@ int file_eof(int fn) {
 
 double file_lof(int fn) {
     QFile *f = getf(fn);
-    fflush(f->fp);
+    /* ftell before anything else: on Windows, fflush on a stream that was being read drops the read
+       buffer without moving the file position back, and the position would be lost */
     long pos = ftell(f->fp);
     fseek(f->fp, 0, SEEK_END);
     long size = ftell(f->fp);
@@ -392,7 +393,7 @@ void file_put(int fn, double rec, int hasrec, Value *v) {
         long pos = f->mode == FM_RANDOM ? (long)(rec - 1) * f->reclen : (long)rec - 1;
         fflush(f->fp);
         fseek(f->fp, pos, SEEK_SET);
-    }
+    } else fseek(f->fp, 0, SEEK_CUR);   /* C requires a seek between reading and writing */
     if (f->mode == FM_RANDOM) {
         unsigned char *buf = (unsigned char *)qb_alloc((size_t)f->reclen + 1);
         if (v) {
@@ -457,6 +458,85 @@ static int wild_match(const char *pat, const char *s) {
     if (!*s) return 0;
     if (*pat == '?' || toupper((unsigned char)*pat) == toupper((unsigned char)*s)) return wild_match(pat + 1, s + 1);
     return 0;
+}
+
+/* DIR$ (QuickBASIC PDS 7.1): DIR$(spec$) returns the first file that matches, DIR$ the next one,
+   "" when there are no more. QBLike: DIR$(spec$, attr%) with attr% AND &H10 also returns
+   directories (. and .. excluded). */
+static char **dir_list = NULL;
+static int dir_n = 0, dir_pos = 0;
+
+static void dir_add(const char *nm) {
+    dir_list = (char **)qb_realloc(dir_list, sizeof(char *) * (size_t)(dir_n + 1));
+    dir_list[dir_n++] = qb_strdup(nm);
+}
+
+void file_dir(const char *spec, int len, int has_spec, int attr, char **out, int *outlen) {
+    if (has_spec) {
+        for (int i = 0; i < dir_n; i++) free(dir_list[i]);
+        free(dir_list); dir_list = NULL; dir_n = 0; dir_pos = 0;
+        char pat[512];
+        int n = len < 500 ? len : 500;
+        memcpy(pat, spec, (size_t)n); pat[n] = 0;
+        while (n > 0 && pat[n - 1] == ' ') pat[--n] = 0;
+        if (n == 0) strcpy(pat, "*.*");
+        char dir[600] = ".", mask[256];
+        char *slash = strrchr(pat, '/'), *bs = strrchr(pat, '\\');
+        if (!slash || (bs && bs > slash)) slash = bs;
+        if (!slash && pat[0] && pat[1] == ':') slash = pat + 1;   /* C:FILE.TXT */
+        if (slash) {
+            int dl = (int)(slash - pat);
+            if (dl == 0) strcpy(dir, "/");
+            else native_name(pat, (*slash == ':') ? dl + 1 : dl, dir, sizeof dir, 1);
+            snprintf(mask, sizeof mask, "%s", slash + 1);
+        } else snprintf(mask, sizeof mask, "%s", pat);
+        if (!mask[0] || strcmp(mask, "*.*") == 0) strcpy(mask, "*");
+        int want_dirs = (attr & 0x10) != 0;
+#ifdef _WIN32
+        char q[700];
+        snprintf(q, sizeof q, "%s\\*", dir);
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA(q, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                const char *nm = fd.cFileName;
+                if (!strcmp(nm, ".") || !strcmp(nm, "..")) continue;
+                int isd = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                if (isd && !want_dirs) continue;
+                if (wild_match(mask, nm)) dir_add(nm);
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+#else
+        DIR *d = opendir(dir);
+        if (d) {
+            struct dirent *de;
+            while ((de = readdir(d))) {
+                if (de->d_name[0] == '.') continue;
+                char full[1100];
+                snprintf(full, sizeof full, "%s/%s", dir, de->d_name);
+                struct stat st;
+                int isd = stat(full, &st) == 0 && S_ISDIR(st.st_mode);
+                if (isd && !want_dirs) continue;
+                if (wild_match(mask, de->d_name)) dir_add(de->d_name);
+            }
+            closedir(d);
+        }
+#endif
+    }
+    if (dir_pos < dir_n) { *out = qb_strdup(dir_list[dir_pos]); *outlen = (int)strlen(*out); dir_pos++; }
+    else { *out = qb_strdup(""); *outlen = 0; }
+}
+
+/* CURDIR$: the current directory */
+void file_curdir(char **out, int *outlen) {
+    char cwd[1024] = "";
+#ifdef _WIN32
+    GetCurrentDirectoryA(sizeof cwd, cwd);
+#else
+    if (!getcwd(cwd, sizeof cwd)) strcpy(cwd, "/");
+#endif
+    *out = qb_strdup(cwd); *outlen = (int)strlen(cwd);
 }
 
 /* KILL filespec$: deletes files; wildcards * and ? allowed, as in DOS */

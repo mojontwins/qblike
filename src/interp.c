@@ -65,7 +65,128 @@ static Array *array_new(SlotInfo *si) {
     a->fixlen = si->fixlen;
     return a;
 }
+/* ------------------------------------------------------------------ */
+/* Emulated real-mode memory for numeric arrays (VARSEG / VARPTR).    */
+/* The first VARSEG/VARPTR of an array gives it a range of addresses  */
+/* in conventional memory; DEF SEG + PEEK/POKE then read and write    */
+/* the bytes of its elements (INTEGER 2, LONG/SINGLE 4, DOUBLE 8, in  */
+/* QBasic's column-major order), and GET/PUT ..., SEG s, o use it.    */
+/* The range is freed when the array is erased or redimensioned.      */
+/* ------------------------------------------------------------------ */
+typedef struct MemMap { Array *a; long lin, size; } MemMap;
+static MemMap *mm;
+static int nmm, capmm, mm_last = -1;
+static const long mm_regions[][2] = { { 0x10000, 0x9F000 }, { 0xC0000, 0xF0000 } };
+
+static int elemsize(int t) { return t == T_INT ? 2 : (t == T_LNG || t == T_SNG) ? 4 : t == T_DBL ? 8 : 0; }
+
+static void mm_forget(Array *a) {
+    for (int i = 0; i < nmm; i++)
+        if (mm[i].a == a) { memmove(&mm[i], &mm[i + 1], sizeof(MemMap) * (size_t)(nmm - i - 1)); nmm--; mm_last = -1; return; }
+}
+
+/* address of an array (allocating it if needed); -1 if out of emulated memory */
+static long mm_addr(Array *a) {
+    long need = ((long)a->count * elemsize(a->t) + 15) & ~15L;
+    if (need <= 0) need = 16;
+    for (int i = 0; i < nmm; i++) if (mm[i].a == a) {
+        if (mm[i].size >= need) return mm[i].lin;
+        mm_forget(a);   /* grew: move it */
+        break;
+    }
+    /* first gap that fits (mm is kept sorted by address) */
+    for (int r = 0; r < 2; r++) {
+        long pos = mm_regions[r][0];
+        int i = 0;
+        while (i < nmm && mm[i].lin + mm[i].size <= pos) i++;
+        for (;;) {
+            long next = i < nmm ? mm[i].lin : mm_regions[r][1];
+            if (next > mm_regions[r][1]) next = mm_regions[r][1];
+            if (next - pos >= need) {
+                if (nmm == capmm) { capmm = capmm ? capmm * 2 : 32; mm = (MemMap *)qb_realloc(mm, sizeof(MemMap) * (size_t)capmm); }
+                memmove(&mm[i + 1], &mm[i], sizeof(MemMap) * (size_t)(nmm - i));
+                mm[i].a = a; mm[i].lin = pos; mm[i].size = need;
+                nmm++;
+                mm_last = -1;
+                return pos;
+            }
+            if (i >= nmm || mm[i].lin >= mm_regions[r][1]) break;
+            pos = mm[i].lin + mm[i].size;
+            i++;
+        }
+    }
+    return -1;
+}
+
+/* array and byte offset behind a linear address, or NULL */
+static Array *mm_find(long lin, long *boff) {
+    if (mm_last >= 0 && mm_last < nmm && lin >= mm[mm_last].lin && lin < mm[mm_last].lin + mm[mm_last].size) {
+        *boff = lin - mm[mm_last].lin; return mm[mm_last].a;
+    }
+    int lo = 0, hi = nmm - 1;
+    while (lo <= hi) {
+        int m = (lo + hi) / 2;
+        if (lin < mm[m].lin) hi = m - 1;
+        else if (lin >= mm[m].lin + mm[m].size) lo = m + 1;
+        else { mm_last = m; *boff = lin - mm[m].lin; return mm[m].a; }
+    }
+    return NULL;
+}
+
+int mem_array_byte(Array *a, long boff) {
+    int es = elemsize(a->t);
+    long idx = boff / es;
+    if (idx < 0 || idx >= a->count) return 0;
+    Value *v = &a->v[idx];
+    unsigned char b[8];
+    switch (a->t) {
+        case T_INT: { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); break; }
+        case T_LNG: { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); break; }
+        case T_SNG: { float x = (float)v->n; memcpy(b, &x, 4); break; }
+        default: { double x = v->n; memcpy(b, &x, 8); break; }
+    }
+    return b[boff % es];
+}
+
+void mem_array_setbyte(Array *a, long boff, int val) {
+    int es = elemsize(a->t);
+    long idx = boff / es;
+    if (idx < 0 || idx >= a->count) return;
+    Value *v = &a->v[idx];
+    unsigned char b[8];
+    int k = (int)(boff % es);
+    switch (a->t) {
+        case T_INT: { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); b[k] = (unsigned char)val; memcpy(&x, b, 2); v->n = x; break; }
+        case T_LNG: { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); b[k] = (unsigned char)val; memcpy(&x, b, 4); v->n = x; break; }
+        case T_SNG: { float x = (float)v->n; memcpy(b, &x, 4); b[k] = (unsigned char)val; memcpy(&x, b, 4); v->n = x; break; }
+        default: { double x = v->n; memcpy(b, &x, 8); b[k] = (unsigned char)val; memcpy(&x, b, 8); v->n = x; break; }
+    }
+}
+
+/* PEEK/POKE on emulated array memory; return 0 if the address is not an array */
+int mem_peek(int seg, int off, int *val) {
+    long boff;
+    Array *a = mm_find(((long)(seg & 0xFFFF) * 16 + (off & 0xFFFF)) & 0xFFFFF, &boff);
+    if (!a) return 0;
+    *val = mem_array_byte(a, boff);
+    return 1;
+}
+int mem_poke(int seg, int off, int val) {
+    long boff;
+    Array *a = mm_find(((long)(seg & 0xFFFF) * 16 + (off & 0xFFFF)) & 0xFFFFF, &boff);
+    if (!a) return 0;
+    mem_array_setbyte(a, boff, val);
+    return 1;
+}
+/* GET/PUT ..., SEG s, o: the array and byte offset behind an address (error if none) */
+Array *mem_resolve(int seg, int off, long *boff) {
+    Array *a = mm_find(((long)(seg & 0xFFFF) * 16 + (off & 0xFFFF)) & 0xFFFFF, boff);
+    if (!a) rt_error_msg(5, "Address does not belong to an array (use VARSEG/VARPTR)");
+    return a;
+}
+
 static void array_clear(Array *a) {
+    if (nmm) mm_forget(a);
     for (int i = 0; i < a->count; i++) val_free(&a->v[i]);
     free(a->v);
     a->v = NULL;
@@ -718,6 +839,7 @@ static double builtin_num(Expr *e) {
         case F_PEEK: {
             int addr = argi(e, 0);
             int ok = 0;
+            { int mv; if (mem_peek(rs->defseg, addr, &mv)) return mv; }
             int v = gfx_peek(rs->defseg, addr & 0xFFFF, &ok);
             if (ok) return v;
             if (rs->defseg == 0 && (addr == 0x417 || addr == 0x418)) return kb_shift_state();
@@ -734,8 +856,34 @@ static double builtin_num(Expr *e) {
             if (e->nargs == 2) return gfx_point(evn(e->args[0]), evn(e->args[1]));
             return gfx_pointfn(argi(e, 0));
         case F_RND: return qb_rnd(e->nargs ? evn(e->args[0]) : 0, e->nargs);
-        case F_SADD: case F_VARPTR: case F_VARSEG: return 0;
+        case F_SADD: return 0;
+        case F_VARPTR: case F_VARSEG: {
+            /* numeric array elements get an emulated address; anything else is 0, as before */
+            Expr *x = e->args[0];
+            if (x->op != E_ARR || elemsize(x->type) == 0) return 0;
+            Array *a = arr_slot(x->scope, x->idx);
+            if (!a->alive) { lval(x); }               /* implicit DIM, like any use */
+            if (x->nargs != a->nd) rt_error(9);
+            int idx[8];
+            for (int i = 0; i < x->nargs && i < 8; i++) idx[i] = (int)qb_round_even(evn(x->args[i]));
+            long boff = arr_offset(a, idx) * elemsize(a->t);
+            long lin = mm_addr(a);
+            if (lin < 0) rt_error(7);
+            long segv, offv;
+            if (boff < 0x10000) { segv = lin >> 4; offv = boff; }
+            else { long t = lin + boff; segv = t >> 4; offv = t & 15; }
+            long r = e->sub == F_VARSEG ? segv : offv;
+            return (double)(int16_t)(uint16_t)r;   /* INTEGER, as in QBasic */
+        }
         case F_MUSIC: return snd_music_playing() ? -1 : 0;
+        case F_SETMEM: {   /* far heap: 384 KB at start, between 0 and 600 KB */
+            static double heap = 393216;
+            heap += evn(e->args[0]);
+            if (heap < 0) heap = 0;
+            if (heap > 614400) heap = 614400;
+            return heap;
+        }
+        case F_SNDBUSY: return snd_sample_busy(argi(e, 0)) ? -1 : 0;
         case F_SNDLOAD: {
             char *nm; int nl;
             evs(e->args[0], &nm, &nl);
@@ -955,6 +1103,23 @@ static void builtin_str(Expr *e, char **p, int *len) {
         }
         case F_ERDEV: ret_str(p, len, "", 0); return;
         case F_IOCTL: ret_str(p, len, "", 0); return;
+        case F_DIR: {
+            extern void file_dir(const char *spec, int len, int has_spec, int attr, char **out, int *outlen);
+            char buf[600] = ""; int bl = 0, attr = 0;
+            if (e->nargs >= 1) {
+                char *sp; int sl; evs(e->args[0], &sp, &sl);
+                bl = sl < 590 ? sl : 590; memcpy(buf, sp, (size_t)bl); free(sp);
+                if (e->nargs >= 2) attr = argi(e, 1);
+            }
+            file_dir(buf, bl, e->nargs >= 1, attr, p, len);
+            return;
+        }
+        case F_CURDIR: {
+            extern void file_curdir(char **out, int *outlen);
+            if (e->nargs >= 1) { char *sp; int sl; evs(e->args[0], &sp, &sl); free(sp); }
+            file_curdir(p, len);
+            return;
+        }
         case F_COMMAND: {
             /* QuickBASIC returns the command line in upper case */
             int n = (int)strlen(g_command);
@@ -1791,6 +1956,42 @@ static int exec(Frame *f, int pc) {
                 break;
             }
             case S_GETG: case S_PUTG: {
+                if (s->p) {   /* image buffer and/or SEG address (QBLike) */
+                    GPExt *g = (GPExt *)s->p;
+                    GSurf surf = { 0 }, *sp = NULL;
+                    Array *da; long dboff;
+                    for (int r = 0; r < 2; r++) {
+                        GPRef *ref = r == 0 ? &g->surf : &g->data;
+                        Array *ra = NULL; long rb = 0;
+                        if (ref->kind == 0) continue;
+                        if (ref->kind == 2) {
+                            int sg = (int)qb_round_even(evn(s->args[ref->first]));
+                            int of = (int)qb_round_even(evn(s->args[ref->first + 1]));
+                            ra = mem_resolve(sg, of, &rb);
+                        } else {
+                            ra = arr_slot(ref->scope, ref->idx);
+                            if (!ra->alive) {
+                                if (ref->n) { int lb[1] = { rs->optionbase }, ub[1] = { 10 }; array_dim(ra, 1, lb, ub, 0); }
+                                else rt_error(5);
+                            }
+                            if (ref->n) {
+                                if (ref->n != ra->nd) rt_error(9);
+                                int idx[8];
+                                for (int i = 0; i < ref->n && i < 8; i++) idx[i] = (int)qb_round_even(evn(s->args[ref->first + i]));
+                                rb = arr_offset(ra, idx) * elemsize(ra->t);
+                            }
+                        }
+                        if (elemsize(ra->t) == 0) rt_error(13);
+                        if (r == 0) { surf.a = ra; surf.boff = rb; sp = &surf; }
+                        else { da = ra; dboff = rb; }
+                    }
+                    if (s->op == S_GETG)
+                        gfx_get_ex(sp, evn(s->e1), evn(s->e2), evn(s->e3), evn(s->e4), s->i1 & 1, (s->i1 >> 1) & 1, da, dboff);
+                    else
+                        gfx_put_ex(sp, evn(s->e1), evn(s->e2), da, dboff, s->i4, s->i1);
+                    pc++;
+                    break;
+                }
                 Array *a = arr_slot(s->i2, s->i3);
                 if (!a->alive) {
                     if (s->nargs) { int lb[1] = { rs->optionbase }, ub[1] = { 10 }; array_dim(a, 1, lb, ub, 0); }
@@ -1876,8 +2077,9 @@ static int exec(Frame *f, int pc) {
                 int ch = s->e2 ? (int)qb_round_even(evn(s->e2)) : 0;
                 int vol = s->e3 ? (int)qb_round_even(evn(s->e3)) : 255;
                 int pan = s->e4 ? (int)qb_round_even(evn(s->e4)) : 0;
+                long rate = s->nargs ? (long)qb_round_even(evn(s->args[0])) : 0;
                 if (s->e2 && ch == 0) rt_error(5);
-                snd_sample_play(id, ch, vol, pan, s->i1);
+                snd_sample_play(id, ch, vol, pan, s->i1, (int)rate);
                 pc++;
                 break;
             }
@@ -2037,7 +2239,7 @@ static int exec(Frame *f, int pc) {
             }
             case S_POKE: {
                 int a = (int)qb_round_even(evn(s->e1)), v = (int)qb_round_even(evn(s->e2));
-                gfx_poke(rs->defseg, a & 0xFFFF, v & 0xFF);
+                if (!mem_poke(rs->defseg, a, v & 0xFF)) gfx_poke(rs->defseg, a & 0xFFFF, v & 0xFF);
                 pc++;
                 break;
             }

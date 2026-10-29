@@ -614,8 +614,11 @@ static Expr *parse_builtin(int kw) {
     switch (kw) {
         case KW_SOUND: {
             /* id% = SOUND file$   (QBLike): loads a WAV file */
+            /* playing% = SOUND(channel%) (QBLike): -1 while the channel is playing (0: any) */
             e->sub = F_SNDLOAD; e->type = T_INT;
-            Expr *a = parse_add(); need_str(a); addarg(e, a);
+            Expr *a = parse_add();
+            if (IS_NUM(a->type)) e->sub = F_SNDBUSY; else need_str(a);
+            addarg(e, a);
             return e;
         }
         case KW_RND:
@@ -878,6 +881,37 @@ static Expr *parse_lvalue_from_id(int allow_call, int *isfuncret) {
         return e;
     }
     if (pi >= 0 && !isfuncret) cerr_at(col, "Expected: expression");
+
+    /* DIR$ [(spec$ [, attr%])] and CURDIR$ [(drive$)] (QuickBASIC PDS 7.1), unless the program has
+       its own variable or array with that name */
+    if (!isfuncret && allow_call && st == T_STR && (!strcmp(base, "DIR") || !strcmp(base, "CURDIR"))) {
+        int sc;
+        int isdir = !strcmp(base, "DIR");
+        if (isop('(') ? !resolve_var(name, 1, 0, &sc) : !resolve_var(name, 0, 0, &sc)) {
+            Expr *e = enew(E_FUNC, T_STR);
+            e->sub = isdir ? F_DIR : F_CURDIR;
+            if (acceptop('(')) {
+                Expr *a = parse_expr(); need_str(a); addarg(e, a);
+                if (isdir && acceptop(',')) { Expr *b = parse_expr(); need_num(b); addarg(e, b); }
+                expectop(')');
+            }
+            return e;
+        }
+    }
+
+    /* SETMEM(n&) (QuickBASIC 4.5): changes the far heap size; there is no such limit in QBLike, the
+       value is only bookkept. Not reserved: an array or FUNCTION called SETMEM keeps working */
+    if (!isfuncret && allow_call && (st == T_NONE || st == T_LNG) && !strcmp(base, "SETMEM") && isop('(')) {
+        int sc;
+        if (!resolve_var(name, 1, 0, &sc)) {
+            Expr *e = enew(E_FUNC, T_LNG);
+            e->sub = F_SETMEM;
+            expectop('(');
+            Expr *a = parse_expr(); need_num(a); addarg(e, a);
+            expectop(')');
+            return e;
+        }
+    }
 
     /* COMMAND$ (QuickBASIC): the command line, unless the program has a variable COMMAND$ */
     if (!isfuncret && allow_call && st == T_STR && !strcmp(base, "COMMAND") && !isop('(')) {
@@ -2250,6 +2284,103 @@ static int is_music_statement(void) {
     return 1;
 }
 
+/* GET/PUT image buffers (QBLike):
+     PUT [surface,] [STEP](x, y), source [, verb]      GET [surface,] box, dest
+   surface / source / dest:  array[(index)]  or  SEG seg, off                         */
+static int gp_paren_has_comma(int k) {   /* token k is '(': does the group contain a top-level comma? */
+    int depth = 0;
+    for (;; k++) {
+        Tok *q = peekn(k);
+        if (q->k == TK_EOL || q->k == TK_REM) return 0;
+        if (q->k == TK_OP && q->kw == '(') depth++;
+        else if (q->k == TK_OP && q->kw == ')') { if (--depth == 0) return 0; }
+        else if (q->k == TK_OP && q->kw == ',' && depth == 1) return 1;
+    }
+}
+static int gp_extended(void) {
+    if (iskw(KW_SEG)) return 1;
+    if (isop('(') || iskw(KW_STEP)) {
+        /* normal form, but the data may be given as SEG s, o */
+        int depth = 0;
+        for (int k = 0; ; k++) {
+            Tok *q = peekn(k);
+            if (q->k == TK_EOL || q->k == TK_REM) return 0;
+            if (q->k == TK_OP && q->kw == ':' && depth == 0) return 0;
+            if (q->k == TK_KW && q->kw == KW_ELSE && depth == 0) return 0;
+            if (q->k == TK_OP && q->kw == '(') depth++;
+            if (q->k == TK_OP && q->kw == ')') depth--;
+            if (depth == 0 && q->k == TK_KW && q->kw == KW_SEG) return 1;
+        }
+    }
+    if (cur()->k != TK_ID) return 0;
+    int k = 1;
+    if (peekn(1)->k == TK_OP && peekn(1)->kw == '(') {   /* skip the subscript */
+        int depth = 0;
+        for (;; k++) {
+            Tok *q = peekn(k);
+            if (q->k == TK_EOL || q->k == TK_REM) return 0;
+            if (q->k == TK_OP && q->kw == '(') depth++;
+            else if (q->k == TK_OP && q->kw == ')' && --depth == 0) { k++; break; }
+        }
+    }
+    if (!(peekn(k)->k == TK_OP && peekn(k)->kw == ',')) return 0;
+    k++;
+    if (peekn(k)->k == TK_KW && peekn(k)->kw == KW_STEP) return 1;
+    if (peekn(k)->k == TK_OP && peekn(k)->kw == '(') return gp_paren_has_comma(k);
+    return 0;
+}
+static void gp_ref(int si, GPRef *r) {
+    Stmt *st = ST(si);
+    r->first = st->nargs;
+    if (acceptkw(KW_SEG)) {
+        r->kind = 2;
+        stmt_addarg(si, parse_num_expr());
+        expectop(',');
+        stmt_addarg(si, parse_num_expr());
+        r->n = 2;
+        return;
+    }
+    if (cur()->k != TK_ID) cerr("Expected: array or SEG");
+    char name[64]; snprintf(name, sizeof name, "%s", cur()->s); adv();
+    int scope; Sym *sy = resolve_var(name, 1, 1, &scope);
+    if (sy->t == T_STR || sy->t == T_UDT) cerr("Type mismatch");
+    r->kind = 1; r->scope = scope; r->idx = sy->idx;
+    if (acceptop('(')) { if (!isop(')')) { stmt_addarg(si, parse_num_expr()); while (acceptop(',')) stmt_addarg(si, parse_num_expr()); } expectop(')'); }
+    r->n = ST(si)->nargs - r->first;
+}
+static void compile_getput_ext(int isput) {
+    int si = emit(isput ? S_PUTG : S_GETG);
+    GPExt *g = (GPExt *)qb_alloc(sizeof(GPExt));
+    ST(si)->p = g;
+    if (!(isop('(') || iskw(KW_STEP))) { gp_ref(si, &g->surf); expectop(','); }
+    if (isput) {
+        Expr *x, *y;
+        ST(si)->i1 = parse_coord(&x, &y);
+        ST(si)->e1 = x; ST(si)->e2 = y;
+        expectop(',');
+        gp_ref(si, &g->data);
+        ST(si)->i4 = 3;
+        if (acceptop(',')) {
+            if (acceptkw(KW_PSET)) ST(si)->i4 = 0;
+            else if (acceptkw(KW_PRESET)) ST(si)->i4 = 1;
+            else if (acceptkw(KW_AND)) ST(si)->i4 = 2;
+            else if (acceptkw(KW_XOR)) ST(si)->i4 = 3;
+            else if (acceptkw(KW_OR)) ST(si)->i4 = 4;
+            else if (cur()->k == TK_ID && str_ieq(cur()->s, "MASK")) { adv(); ST(si)->i4 = 5; }
+            else cerr("Expected: PSET or PRESET or AND or OR or XOR or MASK");
+        }
+    } else {
+        Expr *x1, *y1, *x2, *y2;
+        int s1 = parse_coord(&x1, &y1);
+        expectop('-');
+        int s2 = parse_coord(&x2, &y2);
+        expectop(',');
+        ST(si)->e1 = x1; ST(si)->e2 = y1; ST(si)->e3 = x2; ST(si)->e4 = y2;
+        ST(si)->i1 = s1 | (s2 << 1);
+        gp_ref(si, &g->data);
+    }
+}
+
 static void compile_statement(void) {
     Tok *t = cur();
     if (t->k == TK_ID) {
@@ -2648,6 +2779,7 @@ static void compile_statement(void) {
         }
         case KW_DRAW: { int si = emit(S_DRAW); ST(si)->e1 = parse_str_expr(); return; }
         case KW_GET:
+            if (gp_extended()) { compile_getput_ext(0); return; }
             if (isop('(') || iskw(KW_STEP)) {
                 int si = emit(S_GETG);
                 Expr *x1, *y1, *x2, *y2;
@@ -2668,6 +2800,7 @@ static void compile_statement(void) {
             compile_getput_file(S_GETF);
             return;
         case KW_PUT:
+            if (gp_extended()) { compile_getput_ext(1); return; }
             if (isop('(') || iskw(KW_STEP)) {
                 int si = emit(S_PUTG);
                 Expr *x, *y;
@@ -2763,15 +2896,16 @@ static void compile_statement(void) {
         case KW_BEEP: emit(S_BEEP); return;
         case KW_SOUND: {
             if (iskw(KW_PLAY)) {
-                /* SOUND PLAY id% [, channel%] [, volume%] [, pan%] [, LOOP]   (QBLike) */
+                /* SOUND PLAY id% [, channel%] [, volume%] [, pan%] [, rate&] [, LOOP]   (QBLike) */
                 adv();
                 int si = emit(S_SNDPLAY);
                 ST(si)->e1 = parse_num_expr();
                 Expr **slot[3] = { &ST(si)->e2, &ST(si)->e3, &ST(si)->e4 };
-                for (int k = 0; k < 3 && acceptop(','); k++) {
+                for (int k = 0; k < 4 && acceptop(','); k++) {
                     if (iskw(KW_LOOP)) { adv(); ST(si)->i1 = 1; goto sndplay_done; }
                     if (isop(',')) continue;
-                    *slot[k] = parse_num_expr();
+                    if (k < 3) *slot[k] = parse_num_expr();
+                    else stmt_addarg(si, parse_num_expr());   /* sample rate */
                 }
                 if (acceptop(',')) { expectkw(KW_LOOP); ST(si)->i1 = 1; }
             sndplay_done:

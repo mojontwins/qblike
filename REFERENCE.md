@@ -36,8 +36,8 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 | Sound | [BEEP](#kw-beep) · [SOUND](#kw-sound) · [PLAY](#kw-play) · [ON PLAY](#kw-on-play) · [MUSIC](#kw-music) |
 | Strings | [LEFT\$](#kw-left-s) · [MID\$](#kw-mid-s) · [INSTR](#kw-instr) · [LEN](#kw-len) · [STR\$](#kw-str-s) · [VAL](#kw-val) · [CHR\$](#kw-chr-s) · [ASC](#kw-asc) |
 | Math | [ABS](#kw-abs) · [INT](#kw-int) · [FIX](#kw-fix) · [SQR](#kw-sqr) · [SIN](#kw-sin) · [RND](#kw-rnd) · [RANDOMIZE](#kw-randomize) |
-| Files | [OPEN](#kw-open) · [CLOSE](#kw-close) · [GET](#kw-get) · [PUT](#kw-put) · [EOF](#kw-eof) · [KILL](#kw-kill) · [FILES](#kw-files) |
-| Hardware | [DEF SEG](#kw-def-seg) · [PEEK](#kw-peek) · [POKE](#kw-poke) · [INP](#kw-inp) · [OUT](#kw-out) · [WAIT](#kw-wait) |
+| Files | [OPEN](#kw-open) · [CLOSE](#kw-close) · [GET](#kw-get) · [PUT](#kw-put) · [EOF](#kw-eof) · [KILL](#kw-kill) · [FILES](#kw-files) · [DIR\$](#kw-dir-s) |
+| Hardware | [DEF SEG](#kw-def-seg) · [PEEK](#kw-peek) · [POKE](#kw-poke) · [VARPTR](#kw-varptr) · [INP](#kw-inp) · [OUT](#kw-out) · [WAIT](#kw-wait) |
 
 ## Index
 
@@ -49,9 +49,9 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 
 **B** — BASE → [OPTION BASE](#kw-option-base) · [BEEP](#kw-beep) · BINARY → [OPEN](#kw-open) · [BLOAD](#kw-bload) · [BSAVE](#kw-bsave)
 
-**C** — [CALL](#kw-call) · [CASE](#kw-case) · [CDBL](#kw-cdbl) · [CHAIN](#kw-chain) · [CHDIR](#kw-chdir) · [CHR\$](#kw-chr-s) · [CINT](#kw-cint) · [CIRCLE](#kw-circle) · [CLEAR](#kw-clear) · [CLIP](#kw-clip) · [CLNG](#kw-clng) · [CLOSE](#kw-close) · [CLS](#kw-cls) · [COLOR](#kw-color) · [COM](#kw-com) · [COMMAND\$](#kw-command-s) · [COMMON](#kw-common) · [CONST](#kw-const) · [COS](#kw-cos) · [CSNG](#kw-csng) · [CSRLIN](#kw-csrlin) · [CVD](#kw-cvd) · CVDMBF → [CVSMBF](#kw-cvsmbf) · [CVI](#kw-cvi) · [CVL](#kw-cvl) · [CVS](#kw-cvs) · [CVSMBF](#kw-cvsmbf)
+**C** — [CALL](#kw-call) · [CASE](#kw-case) · [CDBL](#kw-cdbl) · [CHAIN](#kw-chain) · [CHDIR](#kw-chdir) · [CHR\$](#kw-chr-s) · [CINT](#kw-cint) · [CIRCLE](#kw-circle) · [CLEAR](#kw-clear) · [CLIP](#kw-clip) · [CLNG](#kw-clng) · [CLOSE](#kw-close) · [CLS](#kw-cls) · [COLOR](#kw-color) · [COM](#kw-com) · [COMMAND\$](#kw-command-s) · [COMMON](#kw-common) · [CONST](#kw-const) · [COS](#kw-cos) · [CSNG](#kw-csng) · [CSRLIN](#kw-csrlin) · [CURDIR\$](#kw-curdir-s) · [CVD](#kw-cvd) · CVDMBF → [CVSMBF](#kw-cvsmbf) · [CVI](#kw-cvi) · [CVL](#kw-cvl) · [CVS](#kw-cvs) · [CVSMBF](#kw-cvsmbf)
 
-**D** — [DATA](#kw-data) · [DATE\$](#kw-date-s) · [DECLARE](#kw-declare) · DEF → [DEF FN](#kw-def-fn) · [DEF FN](#kw-def-fn) · [DEF SEG](#kw-def-seg) · DEFDBL → [DEFINT](#kw-defint) · [DEFINT](#kw-defint) · DEFLNG → [DEFINT](#kw-defint) · DEFSNG → [DEFINT](#kw-defint) · DEFSTR → [DEFINT](#kw-defint) · [DIM](#kw-dim) · [DO](#kw-do) · DOUBLE → [DIM](#kw-dim) · [DRAW](#kw-draw)
+**D** — [DATA](#kw-data) · [DATE\$](#kw-date-s) · [DECLARE](#kw-declare) · DEF → [DEF FN](#kw-def-fn) · [DEF FN](#kw-def-fn) · [DEF SEG](#kw-def-seg) · DEFDBL → [DEFINT](#kw-defint) · [DEFINT](#kw-defint) · DEFLNG → [DEFINT](#kw-defint) · DEFSNG → [DEFINT](#kw-defint) · DEFSTR → [DEFINT](#kw-defint) · [DIM](#kw-dim) · [DIR\$](#kw-dir-s) · [DO](#kw-do) · DOUBLE → [DIM](#kw-dim) · [DRAW](#kw-draw)
 
 **E** — ELSE → [IF](#kw-if) · ELSEIF → [IF](#kw-if) · [END](#kw-end) · [ENVIRON](#kw-environ) · ENVIRON\$ → [ENVIRON](#kw-environ) · [EOF](#kw-eof) · EQV → [Operators](#topic-operators) · [ERASE](#kw-erase) · [ERDEV](#kw-erdev) · ERDEV\$ → [ERDEV](#kw-erdev) · ERL → [ERR](#kw-err) · [ERR](#kw-err) · [ERROR](#kw-error) · EXE → [Make EXE](#topic-make-exe) · [EXIT](#kw-exit) · [EXP](#kw-exp)
 
@@ -77,7 +77,7 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 
 **R** — RANDOM → [OPEN](#kw-open) · [RANDOMIZE](#kw-randomize) · [READ](#kw-read) · [REDIM](#kw-redim) · [REM](#kw-rem) · [RESET](#kw-reset) · [RESTORE](#kw-restore) · [RESUME](#kw-resume) · [RETURN](#kw-return) · [RIGHT\$](#kw-right-s) · [RMDIR](#kw-rmdir) · [RND](#kw-rnd) · RSET → [LSET](#kw-lset) · RTRIM\$ → [LTRIM\$](#kw-ltrim-s) · [RUN](#kw-run)
 
-**S** — [SCREEN](#kw-screen) · [SEEK](#kw-seek) · SEG → [DEF SEG](#kw-def-seg) · [SELECT](#kw-select) · [SGN](#kw-sgn) · [SHARED](#kw-shared) · [SHELL](#kw-shell) · [SIN](#kw-sin) · SINGLE → [DIM](#kw-dim) · [SLEEP](#kw-sleep) · [SOUND](#kw-sound) · [SPACE\$](#kw-space-s) · [SPC](#kw-spc) · [SQR](#kw-sqr) · [STATIC](#kw-static) · STEP → [FOR](#kw-for) · [STICK](#kw-stick) · [STOP](#kw-stop) · [STR\$](#kw-str-s) · STRIG → [STICK](#kw-stick) · STRING → [DIM](#kw-dim) · [STRING\$](#kw-string-s) · [SUB](#kw-sub) · [SWAP](#kw-swap) · [SYSTEM](#kw-system)
+**S** — [SCREEN](#kw-screen) · [SEEK](#kw-seek) · SEG → [DEF SEG](#kw-def-seg) · [SELECT](#kw-select) · [SETMEM](#kw-setmem) · [SGN](#kw-sgn) · [SHARED](#kw-shared) · [SHELL](#kw-shell) · [SIN](#kw-sin) · SINGLE → [DIM](#kw-dim) · [SLEEP](#kw-sleep) · [SOUND](#kw-sound) · [SPACE\$](#kw-space-s) · [SPC](#kw-spc) · [SQR](#kw-sqr) · [STATIC](#kw-static) · STEP → [FOR](#kw-for) · [STICK](#kw-stick) · [STOP](#kw-stop) · [STR\$](#kw-str-s) · STRIG → [STICK](#kw-stick) · STRING → [DIM](#kw-dim) · [STRING\$](#kw-string-s) · [SUB](#kw-sub) · [SWAP](#kw-swap) · [SYSTEM](#kw-system)
 
 **T** — [TAB](#kw-tab) · [TAN](#kw-tan) · THEN → [IF](#kw-if) · [TIME\$](#kw-time-s) · [TIMER](#kw-timer) · TO → [FOR](#kw-for) · TROFF → [TRON](#kw-tron) · [TRON](#kw-tron) · [TYPE](#kw-type)
 
@@ -166,20 +166,28 @@ See also: [ON ERROR](#kw-on-error), [ERR](#kw-err)
 
 QBLike emulates the hardware tricks used by DOS games:
 
-- Direct VGA memory in SCREEN 13: DEF SEG = &HA000: POKE y \* 320 + x, c
-- Vertical sync: WHILE (INP(&H3DA) AND 8) = 0: WEND  (or WAIT &H3DA, 8)
-- Palette ports: OUT &H3C8, index: OUT &H3C9, r: OUT &H3C9, g: OUT &H3C9, b
-- Keyboard scan codes: INP(&H60)
-- Several keys at once: [MULTIKEY](#kw-multikey)(scancode)
-- Mouse: [MOUSE](#kw-mouse) x, y, buttons
-- Transparent sprites: PUT (x, y), sprite(0), MASK   (see [PUT](#kw-put))
-- Clipped sprites: PUT never fails off-screen; area set with [CLIP](#kw-clip)
-- Page flipping: SCREEN 7, 0, 1, 0 ... [PCOPY](#kw-pcopy) 1, 0
-- Loading images: [LOADBMP](#kw-loadbmp), [LOADGIF](#kw-loadgif) and [LOADPAL](#kw-loadpal)
-- Flood fill by color, any border: [FILL](#kw-fill) (x, y), color
-- Background music: [MUSIC](#kw-music) "SONG.MOD", LOOP   (MOD or MIDI)
-- Sound effects: id = [SOUND](#kw-sound) "BOOM.WAV": SOUND PLAY id
-- AdLib FM ports: OUT &H388, reg: OUT &H389, value   (see [OUT](#kw-out))
+```
+* Direct VGA memory in SCREEN 13: DEF SEG = &HA000: POKE y * 320 + x, c
+* Vertical sync: WHILE (INP(&H3DA) AND 8) = 0: WEND  (or WAIT &H3DA, 8)
+* Palette ports: OUT &H3C8, index: OUT &H3C9, r: OUT &H3C9, g: OUT &H3C9, b
+* Keyboard scan codes: INP(&H60)
+* Several keys at once: MULTIKEY(scancode)
+* Mouse: MOUSE x, y, buttons
+* Transparent sprites: PUT (x, y), sprite(0), MASK   (see PUT)
+* Clipped sprites: PUT never fails off-screen; area set with CLIP
+* Page flipping: SCREEN 7, 0, 1, 0 ... PCOPY 1, 0  (SCREEN 13: 64 pages)
+* Off-screen image buffers: PUT buf(0), (x, y), sprite(0), MASK, then
+  PUT (0, 0), buf(0), PSET   (see PUT)
+* Array addresses: VARSEG/VARPTR with PEEK, POKE, BLOAD and
+  PUT (x, y), SEG s, o
+* Loading images: LOADBMP, LOADGIF and LOADPAL
+* Flood fill by color, any border: FILL (x, y), color
+* Background music: MUSIC "SONG.MOD", LOOP   (MOD or MIDI)
+* Sound effects: id = SOUND "BOOM.WAV": SOUND PLAY id
+* AdLib FM ports: OUT &H388, reg: OUT &H389, value   (see OUT)
+* DirectQB games: lib/directqb/DIRECTQB.BI implements the whole
+  DirectQB 1.61 library in QBLike BASIC: keep '$INCLUDE: 'DIRECTQB.BI'
+```
 
 See also: [INP](#kw-inp), [OUT](#kw-out), [DEF SEG](#kw-def-seg), [GET](#kw-get)
 
@@ -617,6 +625,18 @@ Returns the current row of the text cursor (1-based). POS(0) returns the column.
 
 See also: [POS](#kw-pos), [LOCATE](#kw-locate)
 
+<a id="kw-curdir-s"></a>
+
+### CURDIR$
+
+```
+CURDIR$[(drive$)]
+```
+
+QuickBASIC PDS function, available in QBLike. Returns the current directory as a native path of the system (C:\\GAMES on Windows, /home/user/games on Linux). drive\$ is accepted and ignored. Not a reserved word (see DIR\$).
+
+See also: [DIR\$](#kw-dir-s), [CHDIR](#kw-chdir)
+
 <a id="kw-cvd"></a>
 
 ### CVD
@@ -754,15 +774,20 @@ DEF SEG [=address]
 Sets the segment used by PEEK, POKE, BLOAD and BSAVE. Emulated segments:
 
 ```
-&HA000  SCREEN 13: 1 byte per pixel, offset = y*320+x
+&HA000  SCREEN 13: 1 byte per pixel, offset = y*320+x, on the active
+        page (SCREEN ,, page)
         SCREEN 7, 8, 9, 12: EGA/VGA bit planes, offset = y*(width\8)+x\8;
         OUT &H3C4, 2: OUT &H3C5, mask selects the planes written,
         OUT &H3CE, 4: OUT &H3CF, plane selects the plane read
 &HB800  SCREEN 0: character/attribute pairs; SCREEN 1, 2: CGA memory
-0       BIOS: PEEK(&H417) keyboard flags, PEEK(&H46C) timer ticks
+0       BIOS: PEEK(&H417) keyboard flags, PEEK(&H46C) timer ticks,
+        PEEK(&H449) video mode (&H13 in SCREEN 13, 3 in SCREEN 0),
+        PEEK(&H44A) text columns, PEEK(&H462) visual page,
+        PEEK(&H484) text rows - 1
+VARSEG of a numeric array: the bytes of the array (see VARPTR)
 ```
 
-See also: [PEEK](#kw-peek), [POKE](#kw-poke), [BLOAD](#kw-bload)
+See also: [PEEK](#kw-peek), [POKE](#kw-poke), [BLOAD](#kw-bload), [VARPTR](#kw-varptr)
 
 <a id="kw-defint"></a>
 
@@ -803,6 +828,25 @@ DIM SHARED score&, player AS PlayerType
 ```
 
 See also: [REDIM](#kw-redim), [ERASE](#kw-erase), [TYPE](#kw-type), [SHARED](#kw-shared), [OPTION BASE](#kw-option-base)
+
+<a id="kw-dir-s"></a>
+
+### DIR$
+
+```
+DIR$[(filespec$[, attributes%])]
+```
+
+QuickBASIC PDS function, available in QBLike. With filespec\$ (wildcards \* and ? allowed, with a path or not) returns the first matching file name; without arguments, the next one; "" when there are no more. attributes% &H10 also lists directories. "." and ".." are never listed.
+
+```
+f$ = DIR$("*.BAS")
+DO WHILE LEN(f$): PRINT f$: f$ = DIR$: LOOP
+```
+
+DIR\$ is not a reserved word: a program with its own DIR\$ variable or array keeps using it.
+
+See also: [CURDIR\$](#kw-curdir-s), [FILES](#kw-files), [KILL](#kw-kill)
 
 <a id="kw-do"></a>
 
@@ -1125,7 +1169,9 @@ See also: [SUB](#kw-sub), [DECLARE](#kw-declare), [EXIT](#kw-exit)
 
 ```
 GET [#]filenumber%[,[record&][,variable]]        (files)
-GET [STEP](x1!,y1!)-[STEP](x2!,y2!), arrayname[(index%)]   (graphics)
+GET [surface,] [STEP](x1!,y1!)-[STEP](x2!,y2!), data   (graphics)
+
+surface, data:  arrayname[(index%)]  |  SEG segment%, offset%
 ```
 
 Files: reads a record from a file opened FOR RANDOM, or bytes from a file opened FOR BINARY, into variable (or the FIELD buffer). record& is the record number (RANDOM) or byte position (BINARY), counting from 1; omitted, the next one is read.
@@ -1137,7 +1183,19 @@ DIM sprite%(130)
 GET (0, 0)-(15, 15), sprite%
 ```
 
-See also: [PUT](#kw-put), [OPEN](#kw-open)
+QBLike extensions (SCREEN 13):
+
+```
+* surface: reads from an image stored in an array (a GET image used as
+  an off-screen buffer) instead of the screen; the coordinates are
+  pixels of that image:
+    GET buffer%(0), (16, 0)-(31, 15), frame%
+* SEG segment%, offset%: the array element at that address, as given by
+  VARSEG/VARPTR (libraries that receive addresses, like DirectQB):
+    GET (0, 0)-(15, 15), SEG VARSEG(spr%(0)), VARPTR(spr%(0))
+```
+
+See also: [PUT](#kw-put), [VARPTR](#kw-varptr), [OPEN](#kw-open)
 
 <a id="kw-gosub"></a>
 
@@ -2010,7 +2068,7 @@ See also: [COLOR](#kw-color), [OUT](#kw-out), [SCREEN](#kw-screen)
 PCOPY sourcepage%, destinationpage%
 ```
 
-Copies one video page to another (SCREEN 0, 7, 8 and 9 have several pages). Used for flicker-free animation: draw on a hidden page and copy it to the visible one.
+Copies one video page to another (SCREEN 0, 7, 8, 9 and 13 have several pages). Used for flicker-free animation: draw on a hidden page and copy it to the visible one.
 
 ```
 SCREEN 7, 0, 1, 0        ' draw on page 1, show page 0
@@ -2028,9 +2086,9 @@ See also: [SCREEN](#kw-screen)
 PEEK(address)
 ```
 
-Returns the byte at the given offset of the segment set with DEF SEG. In QBLike it works on emulated video memory and some BIOS areas: see [DEF SEG](#kw-def-seg).
+Returns the byte at the given offset of the segment set with DEF SEG. In QBLike it works on emulated video memory, some BIOS areas and the numeric arrays (addresses given by VARSEG/VARPTR): see [DEF SEG](#kw-def-seg).
 
-See also: [POKE](#kw-poke), [DEF SEG](#kw-def-seg)
+See also: [POKE](#kw-poke), [DEF SEG](#kw-def-seg), [VARPTR](#kw-varptr)
 
 <a id="kw-pen"></a>
 
@@ -2185,14 +2243,30 @@ See also: [POINT](#kw-point), [LINE](#kw-line)
 
 ```
 PUT [#]filenumber%[,[record&][,variable]]        (files)
-PUT [STEP](x!,y!), arrayname[(index%)] [,actionverb]   (graphics)
+PUT [surface,] [STEP](x!,y!), data [,actionverb]   (graphics)
 
+surface, data:  arrayname[(index%)]  |  SEG segment%, offset%
 actionverb: PSET, PRESET, AND, OR, XOR (default) or MASK
 ```
 
 Writes to a file, or draws an image captured with GET. MASK (QBLike extension) skips pixels of color 0, so sprites can have transparent backgrounds: PUT (x%, y%), sprite%(0), MASK In QBLike PUT is clipped to the CLIP rectangle instead of failing when the image is partly or totally off-screen.
 
-See also: [GET](#kw-get), [CLIP](#kw-clip)
+QBLike extensions (SCREEN 13):
+
+```
+* surface: draws into an image stored in an array instead of the
+  screen, clipped to that image. A full-screen buffer is
+  4 + 320 * 200 bytes (DIM buf%(32001)) with its header set, or taken
+  with GET; compose a frame there and PUT it to the screen at once:
+    buf%(0) = 320 * 8: buf%(1) = 200       ' header: width * 8, height
+    PUT buf%(0), (x%, y%), ship%(0), MASK
+    PUT (0, 0), buf%(0), PSET
+* SEG segment%, offset%: the image (or the surface) at that address, as
+  given by VARSEG/VARPTR:
+    PUT (x%, y%), SEG s%, o%, MASK
+```
+
+See also: [GET](#kw-get), [CLIP](#kw-clip), [VARPTR](#kw-varptr)
 
 <a id="kw-randomize"></a>
 
@@ -2381,7 +2455,7 @@ Sets the screen mode.
 8  640x200, 16 colors, 4 pages
 9  640x350, 16 colors, 2 pages
 11  640x480, 2 colors          12  640x480, 16 colors
-13  320x200, 256 colors
+13  320x200, 256 colors, 64 pages (QBasic: 1; QBLike extension)
 ```
 
 SCREEN 2 with OUT &H3D8, 26 turns the CGA color burst on: composite artifact colors, each group of 4 pixels shown as one of 16 colors. OUT &H3D8, 30 turns it off again.
@@ -2436,6 +2510,18 @@ END SELECT
 ```
 
 See also: [IF](#kw-if)
+
+<a id="kw-setmem"></a>
+
+### SETMEM
+
+```
+SETMEM(numeric-expression&)
+```
+
+QuickBASIC 4.5 function: enlarges (positive value) or reduces (negative) the far heap and returns its new size. QBLike has no such limit, so it only keeps the count, starting at 393216 bytes; programs that free memory for assembly libraries (dummy& = SETMEM(-66000)) work as before. Not a reserved word.
+
+See also: [FRE](#kw-fre)
 
 <a id="kw-sgn"></a>
 
@@ -2513,8 +2599,9 @@ See also: [INKEY\$](#kw-inkey-s)
 ```
 SOUND frequency, duration
 id% = SOUND filespec$
-SOUND PLAY id%[, channel%][, volume%][, pan%][, LOOP]
+SOUND PLAY id%[, channel%][, volume%][, pan%][, rate&][, LOOP]
 SOUND STOP [channel%]
+playing% = SOUND(channel%)
 ```
 
 SOUND frequency, duration generates a tone. Duration is in clock ticks (18.2 per second).
@@ -2526,12 +2613,18 @@ id% = SOUND file$   loads the file and returns its number (loading
                     the same file again returns the same number)
 SOUND PLAY          plays it on a channel (1-12; omitted = a free one).
                     volume% 0-255 (255), pan% -100 left to 100 right
-                    (0), LOOP repeats it until SOUND STOP. Playing on
+                    (0), rate& plays the sound as if it had been
+                    recorded at that sample rate (1000-96000 Hz;
+                    omitted = its own rate), so 2 * rate is an octave
+                    up. LOOP repeats it until SOUND STOP. Playing on
                     a busy channel replaces what was playing there.
 SOUND STOP          stops a channel, or all of them without channel%.
+SOUND(channel%)     -1 while that channel is playing, 0 if it is free
+                    (SOUND(0): any channel).
 
 boom% = SOUND "BOOM.WAV"
 SOUND PLAY boom%, , 200, -60
+SOUND PLAY boom%, 3, , , 22050       ' an octave higher (11025 Hz file)
 ```
 
 See also: [PLAY](#kw-play), [BEEP](#kw-beep), [MUSIC](#kw-music)
@@ -2832,15 +2925,21 @@ VARPTR(variable)
 VARSEG(variable)
 ```
 
-In QBasic, return the offset and the segment of a variable in memory. QBLike has no real-mode memory, so both return 0, with one exception: VARPTR(array(index)) written directly as the offset of BLOAD or BSAVE loads or saves the array's raw bytes from that element:
+Return the offset and the segment of a variable in memory.
+
+QBLike emulates real-mode addresses for the elements of numeric arrays: VARSEG/VARPTR of an element give an address where PEEK, POKE, BLOAD, BSAVE and GET/PUT ... SEG see that array's bytes (as INTEGER values, like in QBasic: offsets over 32767 are negative). Arrays get their address the first time VARSEG or VARPTR is used on them, inside the conventional memory range (&H1000-&H9FFF and &HC000-&HEFFF).
 
 ```
-DEF SEG = VARSEG(ship%(0))       ' classic form; optional in QBLike
-BLOAD "SHIP.SPR", VARPTR(ship%(0))
+DIM spr%(129)
+DEF SEG = VARSEG(spr%(0))
+PRINT PEEK(VARPTR(spr%(0)))           ' low byte of spr%(0)
+POKE VARPTR(spr%(2)), 15              ' first pixel of a GET image
 DEF SEG
 ```
 
-See also: [BLOAD](#kw-bload), [BSAVE](#kw-bsave), [DEF SEG](#kw-def-seg)
+For other variables (scalars, strings) both return 0.
+
+See also: [DEF SEG](#kw-def-seg), [PEEK](#kw-peek), [POKE](#kw-poke), [BLOAD](#kw-bload)
 
 <a id="kw-varptr-s"></a>
 

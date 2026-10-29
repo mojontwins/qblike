@@ -170,6 +170,7 @@ void playsound( int channel, struct sound_t* sound, int loop, int volume );
 void stopsound( int channel );
 int soundplaying( int channel );
 void soundvolume( int channel, int left, int right );
+struct sound_t* qbl_sound_with_rate( struct sound_t* src, int samplerate );   /* QBLike */
 
 
 enum keycode_t { 
@@ -2100,6 +2101,20 @@ struct sound_t* loadwav( char const* filename ) {
     sound->channels = (int)channels;
     sound->samplerate = (int)samplerate;
     sound->framecount = (int)framecount;
+    return sound;
+}
+
+
+/* QBLike: a copy of a sound that plays at another sample rate (pitch / speed change) */
+struct sound_t* qbl_sound_with_rate( struct sound_t* src, int samplerate ) {
+    if( !src || samplerate < 1000 || samplerate > 96000 ) return NULL;
+    size_t bytes = (size_t)src->framecount * (size_t)src->channels * sizeof( short );
+    struct sound_t* sound = (struct sound_t*) malloc( sizeof( struct sound_t ) + bytes );
+    if( !sound ) return NULL;
+    memcpy( sound + 1, src + 1, bytes );
+    sound->channels = src->channels;
+    sound->samplerate = samplerate;
+    sound->framecount = src->framecount;
     return sound;
 }
 

@@ -111,6 +111,9 @@ MUSIC "SONG.MOD", LOOP                     ' NEW: background music, MOD or MIDI 
 boom = SOUND "BOOM.WAV": SOUND PLAY boom   ' NEW: WAV sound effects, 12 channels with volume and pan
 SCREEN FULL                                ' NEW: full screen (SCREEN WINDOW: back to a window)
 '$INCLUDE "LIB\GFX.BI"                     ' NEW: pastes the text of another file (code libraries)
+PUT buf%(0), (x, y), ship%(0), MASK        ' NEW: draw into an image buffer (SCREEN 13), then PUT it
+PUT (x, y), SEG VARSEG(a%(0)), VARPTR(a%(0))  ' NEW: images by address; PEEK/POKE see the arrays
+SCREEN 13, , 1, 0: PCOPY 1, 0              ' NEW: SCREEN 13 has 64 pages
 ```
 
 In QBLike, `PUT` clips the image instead of raising an error when it goes off the screen (or the `CLIP` area).
@@ -148,6 +151,13 @@ and of the CGA and text modes.
 The AdLib / Sound Blaster FM chip is emulated on its ports (`OUT &H388`/`&H389`, `INP(&H388)` with
 working timers), so FM music players written for QuickBASIC, such as Bisqwit's S3M player, run unchanged.
 The `examples` folder includes `NAVES.BAS`, a complete game that uses all of this.
+
+#### DirectQB games
+
+`lib/directqb/DIRECTQB.BI` is a compatibility layer for DirectQB 1.61, the popular assembly game library
+for QuickBASIC: every DirectQB SUB and FUNCTION rewritten in QBLike BASIC. Old DirectQB games run by
+keeping their `'$INCLUDE: 'DIRECTQB.BI'` line (copy the file next to the game). See
+[lib/directqb/README.md](lib/directqb/README.md).
 
 ### Making executables
 
@@ -225,6 +235,7 @@ No build system is needed: it compiles with a single compiler command.
 | `src/clip.c` | system clipboard |
 | `src/image.c` | BMP and GIF loading (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
 | `src/beautify.c` | code formatter (Edit > Format Code) |
+| `lib/directqb/` | DirectQB 1.61 compatibility library (`DIRECTQB.BI`), its documentation and tests |
 | `tools/help2md.py` | rebuilds `REFERENCE.md` from the built-in help: `qblike --help-dump > help.txt` then `python3 tools/help2md.py help.txt > REFERENCE.md` |
 | `src/doslike/` | dos-like (with a few small changes, below) |
 
@@ -380,6 +391,9 @@ MUSIC "TEMA.MOD", LOOP                     ' NUEVO: música de fondo, MOD o MIDI
 boom = SOUND "BOOM.WAV": SOUND PLAY boom   ' NUEVO: efectos de sonido WAV, 12 canales con volumen y pan
 SCREEN FULL                                ' NUEVO: pantalla completa (SCREEN WINDOW: de vuelta a ventana)
 '$INCLUDE "LIB\GFX.BI"                     ' NUEVO: pega el texto de otro archivo (bibliotecas de código)
+PUT buf%(0), (x, y), nave%(0), MASK        ' NUEVO: dibuja en un búfer de imagen (SCREEN 13) y luego PUT
+PUT (x, y), SEG VARSEG(a%(0)), VARPTR(a%(0))  ' NUEVO: imágenes por dirección; PEEK/POKE ven los arrays
+SCREEN 13, , 1, 0: PCOPY 1, 0              ' NUEVO: SCREEN 13 tiene 64 páginas
 ```
 
 En QBLike, `PUT` recorta la imagen en lugar de dar error cuando se sale de la pantalla (o del área de `CLIP`).
@@ -418,6 +432,13 @@ El chip FM de AdLib / Sound Blaster está emulado en sus puertos (`OUT &H388`/`&
 temporizadores), así que los reproductores de música FM escritos para QuickBASIC, como el reproductor de
 S3M de Bisqwit, funcionan sin cambios.
 La carpeta `examples` incluye `NAVES.BAS`, un juego completo que usa todo esto.
+
+#### Juegos de DirectQB
+
+`lib/directqb/DIRECTQB.BI` es una capa de compatibilidad con DirectQB 1.61, la popular librería en
+ensamblador para juegos en QuickBASIC: todos los SUB y FUNCTION de DirectQB reescritos en BASIC de QBLike.
+Los juegos de DirectQB funcionan conservando su línea `'$INCLUDE: 'DIRECTQB.BI'` (basta copiar el archivo
+junto al juego). Ver [lib/directqb/README_es.md](lib/directqb/README_es.md).
 
 ### Crear ejecutables
 
@@ -497,6 +518,7 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 | `src/clip.c` | portapapeles del sistema |
 | `src/image.c` | carga de BMP y GIF (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
 | `src/beautify.c` | formateador de código (Edit > Format Code) |
+| `lib/directqb/` | librería de compatibilidad con DirectQB 1.61 (`DIRECTQB.BI`), su documentación y sus pruebas |
 | `tools/help2md.py` | regenera `REFERENCE.md` a partir de la ayuda integrada: `qblike --help-dump > help.txt` y luego `python3 tools/help2md.py help.txt > REFERENCE.md` |
 | `src/doslike/` | dos-like (con dos pequeños cambios, abajo) |
 

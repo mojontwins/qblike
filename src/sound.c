@@ -39,6 +39,8 @@ static void defer_free(void *p) {
 /* SOUND file$ / SOUND PLAY / MUSIC */
 #define NSND 256
 static struct sound_t *usnd[NSND];
+#define NRATE 8
+static struct { int rate; struct sound_t *snd; } usnd_rate[NSND][NRATE];   /* copies at other rates */
 static char *usnd_name[NSND];
 static int nusnd = 0;
 static double uch_start[NUCH];
@@ -316,7 +318,10 @@ void snd_end(void) {
     for (int i = 0; i < NUCH; i++) stopsound(UCH0 + i);
     stopmusic();
     defer_free(cur_music); cur_music = NULL;
-    for (int i = 0; i < nusnd; i++) { defer_free(usnd[i]); free(usnd_name[i]); usnd[i] = NULL; usnd_name[i] = NULL; }
+    for (int i = 0; i < nusnd; i++) {
+        defer_free(usnd[i]); free(usnd_name[i]); usnd[i] = NULL; usnd_name[i] = NULL;
+        for (int k = 0; k < NRATE; k++) { defer_free(usnd_rate[i][k].snd); usnd_rate[i][k].snd = NULL; usnd_rate[i][k].rate = 0; }
+    }
     nusnd = 0;
     music_vol = 255;
 }
@@ -341,8 +346,29 @@ int snd_load(const char *name, int nl) {
     return ++nusnd;
 }
 
-void snd_sample_play(int id, int ch, int vol, int pan, int loop) {
+void snd_sample_play(int id, int ch, int vol, int pan, int loop, int rate) {
     if (id < 1 || id > nusnd || !usnd[id - 1]) rt_error(5);
+    if (rate != 0 && (rate < 1000 || rate > 96000)) rt_error(5);
+    struct sound_t *snd = usnd[id - 1];
+    if (rate) {   /* the same sound played at another sample rate (DirectQB-style resampling) */
+        int k, free_k = -1;
+        for (k = 0; k < NRATE; k++) {
+            if (usnd_rate[id - 1][k].snd && usnd_rate[id - 1][k].rate == rate) break;
+            if (!usnd_rate[id - 1][k].snd && free_k < 0) free_k = k;
+        }
+        if (k < NRATE) snd = usnd_rate[id - 1][k].snd;
+        else {
+            if (free_k < 0) {   /* cache full: drop the oldest */
+                defer_free(usnd_rate[id - 1][0].snd);
+                memmove(&usnd_rate[id - 1][0], &usnd_rate[id - 1][1], sizeof(usnd_rate[0][0]) * (NRATE - 1));
+                free_k = NRATE - 1;
+            }
+            struct sound_t *c = qbl_sound_with_rate(usnd[id - 1], rate);
+            if (!c) rt_error(7);
+            usnd_rate[id - 1][free_k].rate = rate; usnd_rate[id - 1][free_k].snd = c;
+            snd = c;
+        }
+    }
     if (ch < 0 || ch > NUCH || vol < 0 || vol > 255 || pan < -100 || pan > 100) rt_error(5);
     double now = sys_time();
     if (ch == 0) {   /* first free channel, else the one playing for the longest time */
@@ -357,13 +383,19 @@ void snd_sample_play(int id, int ch, int vol, int pan, int loop) {
     int l = pan > 0 ? vol * (100 - pan) / 100 : vol;
     int r = pan < 0 ? vol * (100 + pan) / 100 : vol;
     uch_start[ch - 1] = now;
-    playsound(UCH0 + ch - 1, usnd[id - 1], loop, vol);
+    playsound(UCH0 + ch - 1, snd, loop, vol);
     soundvolume(UCH0 + ch - 1, l, r);
 }
 
 void snd_sample_stop(int ch) {
     if (ch < 0 || ch > NUCH) rt_error(5);
     for (int i = 0; i < NUCH; i++) if (ch == 0 || ch == i + 1) stopsound(UCH0 + i);
+}
+
+int snd_sample_busy(int ch) {
+    if (ch < 0 || ch > NUCH) rt_error(5);
+    for (int i = 0; i < NUCH; i++) if ((ch == 0 || ch == i + 1) && soundplaying(UCH0 + i)) return 1;
+    return 0;
 }
 
 void snd_music_play(const char *name, int nl, int loop) {

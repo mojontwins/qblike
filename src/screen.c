@@ -137,8 +137,8 @@ typedef struct Scr {
     int w, h, cols, rows, cw, ch, colors, npages;
     int apage, vpage;
     uint16_t *text[8];      /* mode 0: char | attr << 8 */
-    uint8_t *pix[8];        /* graphics pages */
-    uint8_t *gtext[8];      /* graphics mode char memory: char per cell */
+    uint8_t *pix[64];       /* graphics pages (SCREEN 13: up to 64, allocated when first used) */
+    uint8_t *gtext[64];     /* graphics mode char memory: char per cell */
     int cx, cy;             /* cursor 0-based, cx may equal cols (pending wrap) */
     int fg, bg, border;
     int vtop, vbot;
@@ -202,11 +202,19 @@ static void default_palette(void) {
 }
 
 static void free_buffers(void) {
-    for (int i = 0; i < 8; i++) {
-        free(S.text[i]); S.text[i] = NULL;
+    for (int i = 0; i < 64; i++) {
+        if (i < 8) { free(S.text[i]); S.text[i] = NULL; }
         free(S.pix[i]); S.pix[i] = NULL;
         free(S.gtext[i]); S.gtext[i] = NULL;
     }
+}
+
+/* graphics pages are allocated when first used (SCREEN 13 has 64) */
+static void ensure_page(int p) {
+    if (S.mode == 0 || p < 0 || p >= S.npages || S.pix[p]) return;
+    S.pix[p] = (uint8_t *)qb_alloc((size_t)(S.w * S.h));
+    S.gtext[p] = (uint8_t *)qb_alloc((size_t)(S.cols * S.rows));
+    memset(S.gtext[p], ' ', (size_t)(S.cols * S.rows));
 }
 
 static int text_attr(void) {
@@ -309,7 +317,9 @@ static void setup_mode(int mode, int cols, int rows) {
         if (mode == 12 || mode == 11) { if (S.rows == 60) S.ch = 8; else { S.rows = 30; S.ch = 16; } }
         if (mode == 9 || mode == 10) { if (S.rows == 43) S.ch = 8; else { S.rows = 25; S.ch = 14; } }
         S.cols = S.w / S.cw;
-        for (int p = 0; p < S.npages; p++) {
+        /* QBLike: SCREEN 13 has 64 pages (QBasic: 1), for off-screen buffers */
+        if (mode == 13) S.npages = 64;
+        for (int p = 0; p < S.npages && p < 8; p++) {
             S.pix[p] = (uint8_t *)qb_alloc((size_t)(S.w * S.h));
             S.gtext[p] = (uint8_t *)qb_alloc((size_t)(S.cols * S.rows));
             memset(S.gtext[p], ' ', (size_t)(S.cols * S.rows));
@@ -329,7 +339,7 @@ static void setup_mode(int mode, int cols, int rows) {
     S.lastx = S.w / 2; S.lasty = S.h / 2;
     S.drawangle = 0; S.drawscale = 4; S.drawta = 0; S.drawcolor = -1;
     default_palette();
-    for (int p = 0; p < S.npages; p++) {
+    for (int p = 0; p < S.npages && p < 8; p++) {
         int sa = S.apage; S.apage = p;
         clear_text_rows(p, 0, S.rows - 1);
         S.apage = sa;
@@ -365,8 +375,8 @@ void scr_setmode(int mode, int colorsw, int apage, int vpage, int setap, int set
     else if (!setap && !setvp) {
         /* SCREEN with same mode: clears screen in QBasic only when mode changes */
     }
-    if (setap) { if (apage < 0 || apage >= S.npages) rt_error(5); S.apage = apage; }
-    if (setvp) { if (vpage < 0 || vpage >= S.npages) rt_error(5); S.vpage = vpage; }
+    if (setap) { if (apage < 0 || apage >= S.npages) rt_error(5); ensure_page(apage); S.apage = apage; }
+    if (setvp) { if (vpage < 0 || vpage >= S.npages) rt_error(5); ensure_page(vpage); S.vpage = vpage; }
     else if (setap && !setvp) { /* visual page unchanged */ }
 }
 
@@ -1614,59 +1624,62 @@ void gfx_draw(const char *s, int len) {
 }
 
 /* -------- array byte view for GET/PUT -------- */
+int mem_array_byte(Array *a, long boff);
+void mem_array_setbyte(Array *a, long boff, int val);
 static int elem_size(Array *a) {
     switch (a->t) { case T_INT: return 2; case T_LNG: return 4; case T_SNG: return 4; case T_DBL: return 8; }
     return 0;
 }
-static int arr_getbyte(Array *a, int base, long off) {
-    int es = elem_size(a);
-    long idx = base + off / es;
-    if (idx >= a->count) rt_error(5);
-    Value *v = &a->v[idx];
-    unsigned char b[8];
-    switch (a->t) {
-        case T_INT: { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); break; }
-        case T_LNG: { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); break; }
-        case T_SNG: { float x = (float)v->n; memcpy(b, &x, 4); break; }
-        case T_DBL: { double x = v->n; memcpy(b, &x, 8); break; }
-    }
-    return b[off % es];
+static int arr_getbyte(Array *a, long boff) {
+    if (boff < 0 || boff / elem_size(a) >= a->count) rt_error(5);
+    return mem_array_byte(a, boff);
 }
-static void arr_setbyte(Array *a, int base, long off, int val) {
-    int es = elem_size(a);
-    long idx = base + off / es;
-    if (idx >= a->count) rt_error(5);
-    Value *v = &a->v[idx];
-    unsigned char b[8];
-    switch (a->t) {
-        case T_INT: { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); b[off % es] = (unsigned char)val; memcpy(&x, b, 2); v->n = x; break; }
-        case T_LNG: { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); b[off % es] = (unsigned char)val; memcpy(&x, b, 4); v->n = x; break; }
-        case T_SNG: { float x = (float)v->n; memcpy(b, &x, 4); b[off % es] = (unsigned char)val; memcpy(&x, b, 4); v->n = x; break; }
-        case T_DBL: { double x = v->n; memcpy(b, &x, 8); b[off % es] = (unsigned char)val; memcpy(&x, b, 8); v->n = x; break; }
-    }
+static void arr_setbyte(Array *a, long boff, int val) {
+    if (boff < 0 || boff / elem_size(a) >= a->count) rt_error(5);
+    mem_array_setbyte(a, boff, val);
 }
 
-void gfx_get(double x1, double y1, double x2, double y2, int step1, int step2, Array *a, int index) {
+/* QBLike: GET/PUT can also work on an image held in an array (GET format, 256 colours only):
+   the "surface" is either the screen (a == NULL) or that image. */
+static void surf_open(GSurf *g) {
+    if (!g->a) return;
+    if (S.colors != 256) rt_error_msg(5, "Image buffers in arrays need SCREEN 13");
+    if (g->a->t == T_STR || g->a->t == T_UDT) rt_error(13);
+    g->w = (arr_getbyte(g->a, g->boff) | (arr_getbyte(g->a, g->boff + 1) << 8)) / 8;
+    g->h = arr_getbyte(g->a, g->boff + 2) | (arr_getbyte(g->a, g->boff + 3) << 8);
+}
+
+void gfx_get_ex(GSurf *src, double x1, double y1, double x2, double y2, int step1, int step2, Array *a, long dboff) {
     need_gfx();
     if (a->t == T_STR || a->t == T_UDT) rt_error(13);
+    GSurf scr = { 0 };
+    if (!src) src = &scr;
+    surf_open(src);
     if (step1) { x1 += S.lastx; y1 += S.lasty; }
     if (step2) { x2 += x1; y2 += y1; }
-    double ax, ay, bx, by;
-    map_xy(x1, y1, &ax, &ay);
-    map_xy(x2, y2, &bx, &by);
-    int X1 = iround(ax), Y1 = iround(ay), X2 = iround(bx), Y2 = iround(by);
+    int X1, Y1, X2, Y2, W, H;
+    if (src->a) { X1 = iround(x1); Y1 = iround(y1); X2 = iround(x2); Y2 = iround(y2); W = src->w; H = src->h; }
+    else {
+        double ax, ay, bx, by;
+        map_xy(x1, y1, &ax, &ay);
+        map_xy(x2, y2, &bx, &by);
+        X1 = iround(ax); Y1 = iround(ay); X2 = iround(bx); Y2 = iround(by); W = S.w; H = S.h;
+    }
     if (X1 > X2) { int t = X1; X1 = X2; X2 = t; }
     if (Y1 > Y2) { int t = Y1; Y1 = Y2; Y2 = t; }
-    if (X1 < 0 || Y1 < 0 || X2 >= S.w || Y2 >= S.h) rt_error(5);
+    if (X1 < 0 || Y1 < 0 || X2 >= W || Y2 >= H) rt_error(5);
     int w = X2 - X1 + 1, h = Y2 - Y1 + 1;
-    long o = 0;
+    long o = dboff;
     int bpp = S.colors == 256 ? 8 : S.colors == 16 ? 4 : S.colors == 4 ? 2 : 1;
     int wfield = (bpp == 8) ? w * 8 : (bpp == 4 ? w : w * bpp);
-    arr_setbyte(a, index, o++, wfield & 0xFF); arr_setbyte(a, index, o++, (wfield >> 8) & 0xFF);
-    arr_setbyte(a, index, o++, h & 0xFF); arr_setbyte(a, index, o++, (h >> 8) & 0xFF);
+    arr_setbyte(a, o++, wfield & 0xFF); arr_setbyte(a, o++, (wfield >> 8) & 0xFF);
+    arr_setbyte(a, o++, h & 0xFF); arr_setbyte(a, o++, (h >> 8) & 0xFF);
     for (int y = 0; y < h; y++) {
-        if (bpp == 8) {
-            for (int x = 0; x < w; x++) arr_setbyte(a, index, o++, getpix(X1 + x, Y1 + y));
+        if (src->a) {
+            long so = src->boff + 4 + (long)(Y1 + y) * src->w + X1;
+            for (int x = 0; x < w; x++) arr_setbyte(a, o++, arr_getbyte(src->a, so + x));
+        } else if (bpp == 8) {
+            for (int x = 0; x < w; x++) arr_setbyte(a, o++, getpix(X1 + x, Y1 + y));
         } else if (bpp == 4) {
             int bpr = (w + 7) / 8;
             for (int pl = 0; pl < 4; pl++)
@@ -1676,7 +1689,7 @@ void gfx_get(double x1, double y1, double x2, double y2, int step1, int step2, A
                         int x = bx2 * 8 + k;
                         if (x < w && (getpix(X1 + x, Y1 + y) >> pl) & 1) byte |= 0x80 >> k;
                     }
-                    arr_setbyte(a, index, o++, byte);
+                    arr_setbyte(a, o++, byte);
                 }
         } else {
             int ppb = 8 / bpp;
@@ -1687,38 +1700,49 @@ void gfx_get(double x1, double y1, double x2, double y2, int step1, int step2, A
                     int x = bx2 * ppb + k;
                     if (x < w) byte |= (getpix(X1 + x, Y1 + y) & ((1 << bpp) - 1)) << (8 - bpp * (k + 1));
                 }
-                arr_setbyte(a, index, o++, byte);
+                arr_setbyte(a, o++, byte);
             }
         }
     }
 }
 
-void gfx_put(double x, double y, Array *a, int index, int action, int step) {
+void gfx_put_ex(GSurf *dst, double x, double y, Array *a, long sboff, int action, int step) {
     need_gfx();
     if (a->t == T_STR || a->t == T_UDT) rt_error(13);
+    GSurf scr = { 0 };
+    if (!dst) dst = &scr;
+    surf_open(dst);
     if (step) { x += S.lastx; y += S.lasty; }
-    double px, py;
-    map_xy(x, y, &px, &py);
-    int X = iround(px), Y = iround(py);
+    int X, Y;
+    if (dst->a) { X = iround(x); Y = iround(y); }
+    else { double px, py; map_xy(x, y, &px, &py); X = iround(px); Y = iround(py); }
     int bpp = S.colors == 256 ? 8 : S.colors == 16 ? 4 : S.colors == 4 ? 2 : 1;
-    long o = 0;
-    int wfield = arr_getbyte(a, index, o) | (arr_getbyte(a, index, o + 1) << 8); o += 2;
-    int h = arr_getbyte(a, index, o) | (arr_getbyte(a, index, o + 1) << 8); o += 2;
+    long o = sboff;
+    int wfield = arr_getbyte(a, o) | (arr_getbyte(a, o + 1) << 8); o += 2;
+    int h = arr_getbyte(a, o) | (arr_getbyte(a, o + 1) << 8); o += 2;
     int w = (bpp == 8) ? wfield / 8 : (bpp == 4 ? wfield : wfield / bpp);
-    /* QBLike: PUT is clipped to the CLIP rectangle (and the VIEW viewport) instead of failing */
-    int cx1 = S.clx1 > S.vx1 ? S.clx1 : S.vx1, cy1 = S.cly1 > S.vy1 ? S.cly1 : S.vy1;
-    int cx2 = S.clx2 < S.vx2 ? S.clx2 : S.vx2, cy2 = S.cly2 < S.vy2 ? S.cly2 : S.vy2;
+    /* QBLike: PUT is clipped to the CLIP rectangle (and the VIEW viewport) instead of failing;
+       into an image buffer, to the image */
+    int cx1, cy1, cx2, cy2;
+    if (dst->a) { cx1 = 0; cy1 = 0; cx2 = dst->w - 1; cy2 = dst->h - 1; }
+    else {
+        cx1 = S.clx1 > S.vx1 ? S.clx1 : S.vx1; cy1 = S.cly1 > S.vy1 ? S.cly1 : S.vy1;
+        cx2 = S.clx2 < S.vx2 ? S.clx2 : S.vx2; cy2 = S.cly2 < S.vy2 ? S.cly2 : S.vy2;
+    }
+    int mask = S.colors == 256 ? 255 : S.colors - 1;
     for (int yy = 0; yy < h; yy++) {
         int rowpix[2048];
         if (w > 2048) rt_error(5);
+        int sy = Y + yy;
         if (bpp == 8) {
-            for (int xx = 0; xx < w; xx++) rowpix[xx] = arr_getbyte(a, index, o++);
+            if (sy < cy1 || sy > cy2) { o += w; continue; }
+            for (int xx = 0; xx < w; xx++) rowpix[xx] = arr_getbyte(a, o++);
         } else if (bpp == 4) {
             int bpr = (w + 7) / 8;
             for (int xx = 0; xx < w; xx++) rowpix[xx] = 0;
             for (int pl = 0; pl < 4; pl++)
                 for (int bx2 = 0; bx2 < bpr; bx2++) {
-                    int byte = arr_getbyte(a, index, o++);
+                    int byte = arr_getbyte(a, o++);
                     for (int k = 0; k < 8; k++) {
                         int xx = bx2 * 8 + k;
                         if (xx < w && (byte & (0x80 >> k))) rowpix[xx] |= 1 << pl;
@@ -1728,19 +1752,22 @@ void gfx_put(double x, double y, Array *a, int index, int action, int step) {
             int ppb = 8 / bpp;
             int bpr = (w + ppb - 1) / ppb;
             for (int bx2 = 0; bx2 < bpr; bx2++) {
-                int byte = arr_getbyte(a, index, o++);
+                int byte = arr_getbyte(a, o++);
                 for (int k = 0; k < ppb; k++) {
                     int xx = bx2 * ppb + k;
                     if (xx < w) rowpix[xx] = (byte >> (8 - bpp * (k + 1))) & ((1 << bpp) - 1);
                 }
             }
         }
-        int mask = S.colors == 256 ? 255 : S.colors - 1;
+        if (sy < cy1 || sy > cy2) continue;
+        long drow = dst->a ? dst->boff + 4 + (long)sy * dst->w : 0;
         for (int xx = 0; xx < w; xx++) {
-            int sx = X + xx, sy = Y + yy;
-            if (sx < cx1 || sx > cx2 || sy < cy1 || sy > cy2) continue;
-            int d = getpix(sx, sy), s2 = rowpix[xx], r;
-            if (action == 5) { if (s2 == 0) continue; r = s2; }
+            int sx = X + xx;
+            if (sx < cx1 || sx > cx2) continue;
+            int s2 = rowpix[xx], r;
+            if (action == 5 && s2 == 0) continue;
+            int d = dst->a ? (action == 0 || action == 5 ? 0 : arr_getbyte(dst->a, drow + sx)) : getpix(sx, sy);
+            if (action == 5) r = s2;
             else switch (action) {
                 case 0: r = s2; break;
                 case 1: r = (~s2) & mask; break;
@@ -1748,10 +1775,21 @@ void gfx_put(double x, double y, Array *a, int index, int action, int step) {
                 case 4: r = d | s2; break;
                 default: r = d ^ s2; break;
             }
-            S.pix[S.apage][sy * S.w + sx] = (uint8_t)r;
+            if (dst->a) arr_setbyte(dst->a, drow + sx, r);
+            else S.pix[S.apage][sy * S.w + sx] = (uint8_t)r;
         }
     }
     S.lastx = x; S.lasty = y;
+}
+
+void gfx_get(double x1, double y1, double x2, double y2, int step1, int step2, Array *a, int index) {
+    if (a->t == T_STR || a->t == T_UDT) rt_error(13);
+    gfx_get_ex(NULL, x1, y1, x2, y2, step1, step2, a, (long)index * elem_size(a));
+}
+
+void gfx_put(double x, double y, Array *a, int index, int action, int step) {
+    if (a->t == T_STR || a->t == T_UDT) rt_error(13);
+    gfx_put_ex(NULL, x, y, a, (long)index * elem_size(a), action, step);
 }
 
 void gfx_palette(int attr, long color, int has) {
@@ -1799,6 +1837,7 @@ void gfx_palette_using(Array *a, int index) {
 
 void gfx_pcopy(int src, int dst) {
     if (src < 0 || dst < 0 || src >= S.npages || dst >= S.npages) rt_error(5);
+    ensure_page(src); ensure_page(dst);
     if (S.mode == 0) memcpy(S.text[dst], S.text[src], sizeof(uint16_t) * (size_t)(S.cols * S.rows));
     else {
         memcpy(S.pix[dst], S.pix[src], (size_t)(S.w * S.h));
@@ -1823,6 +1862,7 @@ static uint8_t *planar_pixels(long o) {
     long page = o / stride, po = o % stride;
     int bpl = S.w / 8;
     if (page >= S.npages || po >= (long)bpl * S.h) return NULL;
+    ensure_page((int)page);
     return S.pix[page] + (po / bpl) * S.w + (po % bpl) * 8;
 }
 static uint8_t *cga_pixels(long o, int *ppb) {
@@ -1880,6 +1920,18 @@ int gfx_peek(int seg, int off, int *ok) {
         return (ticks >> (8 * (lin - 0x46C))) & 0xFF;
     }
     if (lin == 0x417) { *ok = 1; return kb_shift_state(); }
+    /* BIOS video data: current mode (0040:0049), columns (0040:004A), visible page (0040:0062),
+       rows - 1 (0040:0084) */
+    if (lin == 0x449) {
+        static const int bios[14] = { 3, 4, 6, 8, 0, 0, 0, 0x0D, 0x0E, 0x10, 0x0F, 0x11, 0x12, 0x13 };
+        *ok = 1;
+        if (S.mode == 0) return S.cols == 40 ? 1 : 3;
+        return S.mode >= 0 && S.mode <= 13 ? bios[S.mode] : 3;
+    }
+    if (lin == 0x44A) { *ok = 1; return S.cols & 0xFF; }
+    if (lin == 0x44B) { *ok = 1; return S.cols >> 8; }
+    if (lin == 0x462) { *ok = 1; return S.vpage; }
+    if (lin == 0x484) { *ok = 1; return S.rows - 1; }
     return 0;
 }
 
@@ -2087,7 +2139,7 @@ void gfx_bload_array(const char *name, int namelen, Array *a, int index, int sav
         if (len > avail) rt_error(5);      /* asked to save more than the array holds */
         FILE *f = bfile_open(name, namelen, 1);
         bfile_header(f, rs ? rs->defseg : 0, ((long)index * es) & 0xFFFF, len);
-        for (long i = 0; i < len; i++) fputc(arr_getbyte(a, index, i), f);
+        for (long i = 0; i < len; i++) fputc(arr_getbyte(a, (long)index * elem_size(a) + (i)), f);
         fclose(f);
         return;
     }
@@ -2101,7 +2153,7 @@ void gfx_bload_array(const char *name, int namelen, Array *a, int index, int sav
     for (long e = 0; e * es < n; e++) {
         unsigned char b[8];
         long take = n - e * es; if (take > es) take = es;
-        for (int k = 0; k < es; k++) b[k] = (unsigned char)(k < take ? buf[e * es + k] : arr_getbyte(a, index, e * es + k));
+        for (int k = 0; k < es; k++) b[k] = (unsigned char)(k < take ? buf[e * es + k] : arr_getbyte(a, (long)index * elem_size(a) + (e * es + k)));
         arr_set_raw(a, index + e, b);
     }
     free(buf);
@@ -2254,26 +2306,26 @@ int gfx_store_image(Array *a, int index, int w, int h, const uint8_t *pix) {
     int mask = (1 << bpp) - 1;
     long o = 0;
     int wfield = (bpp == 8) ? w * 8 : (bpp == 4 ? w : w * bpp);
-    arr_setbyte(a, index, o++, wfield & 0xFF); arr_setbyte(a, index, o++, (wfield >> 8) & 0xFF);
-    arr_setbyte(a, index, o++, h & 0xFF); arr_setbyte(a, index, o++, (h >> 8) & 0xFF);
+    arr_setbyte(a, (long)index * elem_size(a) + (o++), wfield & 0xFF); arr_setbyte(a, (long)index * elem_size(a) + (o++), (wfield >> 8) & 0xFF);
+    arr_setbyte(a, (long)index * elem_size(a) + (o++), h & 0xFF); arr_setbyte(a, (long)index * elem_size(a) + (o++), (h >> 8) & 0xFF);
     for (int y = 0; y < h; y++) {
         const uint8_t *row = pix + (long)y * w;
         if (bpp == 8) {
-            for (int x = 0; x < w; x++) arr_setbyte(a, index, o++, row[x]);
+            for (int x = 0; x < w; x++) arr_setbyte(a, (long)index * elem_size(a) + (o++), row[x]);
         } else if (bpp == 4) {
             int bpr = (w + 7) / 8;
             for (int pl = 0; pl < 4; pl++)
                 for (int bx = 0; bx < bpr; bx++) {
                     int byte = 0;
                     for (int k = 0; k < 8; k++) { int x = bx * 8 + k; if (x < w && ((row[x] & mask) >> pl) & 1) byte |= 0x80 >> k; }
-                    arr_setbyte(a, index, o++, byte);
+                    arr_setbyte(a, (long)index * elem_size(a) + (o++), byte);
                 }
         } else {
             int ppb = 8 / bpp, bpr = (w + ppb - 1) / ppb;
             for (int bx = 0; bx < bpr; bx++) {
                 int byte = 0;
                 for (int k = 0; k < ppb; k++) { int x = bx * ppb + k; if (x < w) byte |= (row[x] & mask) << (8 - bpp * (k + 1)); }
-                arr_setbyte(a, index, o++, byte);
+                arr_setbyte(a, (long)index * elem_size(a) + (o++), byte);
             }
         }
     }

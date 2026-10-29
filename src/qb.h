@@ -182,6 +182,11 @@ typedef struct Stmt {
     int incline;        /* line in that file */
 } Stmt;
 
+/* GET/PUT with an image buffer and/or an address (QBLike): stored in Stmt.p; the expressions
+   (subscripts, segment, offset) are in Stmt.args from 'first' on */
+typedef struct GPRef { int kind; int scope, idx; int first, n; } GPRef;   /* kind: 0 screen, 1 array, 2 SEG */
+typedef struct GPExt { GPRef surf, data; } GPExt;
+
 typedef struct Param {
     char name[48];
     uint8_t t;
@@ -309,7 +314,7 @@ enum {
     F_MID, F_MKD, F_MKI, F_MKL, F_MKS, F_OCT, F_PEEK, F_PEN, F_PLAY, F_PMAP, F_POINT,
     F_POS, F_RIGHT, F_RND, F_RTRIM, F_SADD, F_SCREEN, F_SEEK, F_SGN, F_SIN, F_SPACE,
     F_SQR, F_STICK, F_STR, F_STRIG, F_STRING, F_TAN, F_TIME, F_TIMER, F_UBOUND,
-    F_UCASE, F_VAL, F_VARPTR, F_VARPTRS, F_VARSEG, F_MUSIC, F_SNDLOAD, F_SPC, F_TAB, F_LENVAR, F_CVSMBF,
+    F_UCASE, F_VAL, F_VARPTR, F_VARPTRS, F_VARSEG, F_MUSIC, F_SNDLOAD, F_SNDBUSY, F_SETMEM, F_DIR, F_CURDIR, F_SPC, F_TAB, F_LENVAR, F_CVSMBF,
     F_CVDMBF, F_MKSMBF, F_MKDMBF, F_IOCTL, F_COMMAND, F_MULTIKEY
 };
 
@@ -439,6 +444,10 @@ void gfx_window(double x1, double y1, double x2, double y2, int screen, int has)
 double gfx_pmap(double v, int fn);
 void gfx_get(double x1, double y1, double x2, double y2, int step1, int step2, Array *a, int index);
 void gfx_put(double x, double y, Array *a, int index, int action, int step);
+typedef struct GSurf { Array *a; long boff; int w, h; } GSurf;   /* image buffer for GET/PUT (a = NULL: screen) */
+void gfx_get_ex(GSurf *src, double x1, double y1, double x2, double y2, int step1, int step2, Array *a, long dboff);
+void gfx_put_ex(GSurf *dst, double x, double y, Array *a, long sboff, int action, int step);
+Array *mem_resolve(int seg, int off, long *boff);
 void gfx_palette(int attr, long color, int has);
 void gfx_palette_using(Array *a, int index);
 void gfx_pcopy(int src, int dst);
@@ -479,8 +488,9 @@ void qb_varptr_str(const char *tok, const char **s, int *len);
 void snd_poll(void);          /* start queued background sounds that are due */
 void snd_end(void);           /* program end: stop music and samples, unload sounds */
 int  snd_load(const char *name, int nl);
-void snd_sample_play(int id, int ch, int vol, int pan, int loop);
+void snd_sample_play(int id, int ch, int vol, int pan, int loop, int rate);
 void snd_sample_stop(int ch);
+int  snd_sample_busy(int ch);
 void snd_music_play(const char *name, int nl, int loop);
 void snd_music_stop(void);
 void snd_music_volume(int v);

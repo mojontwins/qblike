@@ -18,6 +18,7 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [MOUSE](#mouse)
   - [PUT ... MASK](#put--mask)
   - [CLIP (y PUT con recorte)](#clip)
+  - [GET / PUT con búferes de imagen y direcciones](#get--put-con-búferes-de-imagen-y-direcciones)
   - [FILL](#fill)
   - [MUSIC](#music)
   - [SOUND (efectos de sonido)](#sound-efectos-de-sonido)
@@ -26,15 +27,19 @@ La única diferencia de comportamiento con QBasic es que `PUT` recorta la imagen
   - [LOADPAL](#loadpal)
   - [SCREEN 3 (PCjr / Tandy 1000)](#screen-3-pcjr--tandy-1000)
   - [SCREEN FULL / SCREEN WINDOW](#screen-full--screen-window)
+  - [DIR$, CURDIR$ y SETMEM (funciones de QuickBASIC)](#dir-curdir-y-setmem-funciones-de-quickbasic)
 - [Hardware emulado](#hardware-emulado)
   - [Memoria de vídeo (PEEK / POKE)](#memoria-de-vídeo-peek--poke), incluidos los modos planares EGA/VGA
+  - [Arrays en memoria (VARSEG / VARPTR)](#arrays-en-memoria-varseg--varptr)
+  - [Páginas en SCREEN 13](#páginas-en-screen-13)
   - [Sincronización vertical (INP &H3DA, WAIT, WAIT VSYNC)](#sincronización-vertical-inp-h3da-wait-wait-vsync)
   - [Paleta VGA (OUT / INP &H3C7-&H3C9)](#paleta-vga-out--inp-h3c7-h3c9)
   - [CGA compuesto: colores por artefacto (OUT &H3D8)](#cga-compuesto-colores-por-artefacto-out-h3d8)
   - [Teclado (INP &H60, PEEK &H417)](#teclado-inp-h60-peek-h417)
   - [AdLib / Sound Blaster FM (OUT / INP &H388)](#adlib--sound-blaster-fm-out--inp-h388)
-  - [Reloj de la BIOS (PEEK &H46C)](#reloj-de-la-bios-peek-h46c)
+  - [Datos de la BIOS (PEEK &H46C, &H449...)](#datos-de-la-bios-peek-h46c-h449)
   - [BLOAD / BSAVE](#bload--bsave)
+- [Librería DirectQB](#librería-directqb)
 - [Tabla de códigos de tecla](#tabla-de-códigos-de-tecla)
 - [Ejemplo completo](#ejemplo-completo)
 
@@ -232,6 +237,49 @@ NEXT
 
 ---
 
+### GET / PUT con búferes de imagen y direcciones
+
+```
+GET [superficie,] [STEP](x1!, y1!)-[STEP](x2!, y2!), datos
+PUT [superficie,] [STEP](x!, y!), datos [, verbo]
+
+superficie, datos:  nombrearray[(índice%)]  |  SEG segmento%, desplazamiento%
+```
+
+Dos añadidos al `GET` y `PUT` gráficos, para **SCREEN 13**:
+
+- **Búferes de imagen (`superficie`).** Una imagen guardada en un array con el formato de `GET` (una
+  cabecera con `ancho * 8` y `alto`, y luego un byte por píxel) puede usarse como superficie de dibujo fuera
+  de la pantalla: `PUT` dibuja en ella y `GET` lee de ella, con coordenadas en píxeles de esa imagen. Lo que
+  se dibuja en un búfer se recorta al búfer, nunca a `CLIP` ni a `VIEW`. Se puede componer un fotograma
+  entero en un búfer y mostrarlo con un solo `PUT`.
+- **Direcciones (`SEG segmento%, desplazamiento%`).** En lugar del nombre de un array, la imagen (o la
+  superficie) puede darse por su dirección, tal como la devuelven `VARSEG` y `VARPTR` (ver
+  [Arrays en memoria](#arrays-en-memoria-varseg--varptr)). Así llaman a `PUT` las librerías que reciben
+  direcciones, como DirectQB: `PUT (x, y), SEG s%, o%, MASK`.
+
+Todos los verbos funcionan con las dos formas (`PSET`, `PRESET`, `AND`, `OR`, `XOR`, `MASK`). Una imagen que
+no cabe en su array da *Illegal function call*; en otros modos de pantalla, usar una superficie también da
+*Illegal function call*.
+
+```basic
+SCREEN 13
+DIM buf%(32001)                           ' 4 + 320 * 200 bytes
+buf%(0) = 320 * 8: buf%(1) = 200          ' cabecera: ancho * 8, alto
+DIM nave%(129): GET (0, 0)-(15, 15), nave%
+DO
+    PUT buf%(0), (0, 0), fondo%(0), PSET  ' el fondo en el búfer
+    PUT buf%(0), (x%, y%), nave%(0), MASK ' los sprites en el búfer
+    WAIT VSYNC
+    PUT (0, 0), buf%(0), PSET             ' el fotograma entero de una vez
+LOOP UNTIL MULTIKEY(1)
+
+GET buf%(0), (16, 0)-(31, 15), cuadro%    ' una parte del búfer
+PUT (10, 10), SEG VARSEG(nave%(0)), VARPTR(nave%(0)), MASK
+```
+
+---
+
 ### FILL
 
 ```
@@ -299,8 +347,9 @@ DO: LOOP WHILE MUSIC                                            ' espera a que a
 
 ```
 id% = SOUND archivo$
-SOUND PLAY id%[, canal%][, volumen%][, pan%][, LOOP]
+SOUND PLAY id%[, canal%][, volumen%][, pan%][, frecuencia&][, LOOP]
 SOUND STOP [canal%]
+sonando% = SOUND(canal%)
 ```
 
 Efectos de sonido desde archivos WAV, mezclados con la música y con `PLAY`. El `SOUND frecuencia, duración`
@@ -312,8 +361,13 @@ de QBasic sigue funcionando como siempre.
   ocupados, el que lleva más tiempo sonando). Tocar en un canal ocupado sustituye lo que sonaba en él.
 - `volumen%` 0-255 (por defecto 255); `pan%` de -100 (izquierda) a 100 (derecha), 0 centrado (por defecto).
   Los argumentos vacíos toman su valor por defecto: `SOUND PLAY boom%, , , -80`.
+- `frecuencia&` reproduce el sonido como si se hubiera grabado a esa frecuencia de muestreo
+  (1000-96000 Hz): un sonido de 11025 Hz tocado a 22050 suena una octava más agudo y el doble de rápido.
+  Sin ella se usa la del archivo.
 - Con `LOOP` el sonido se repite hasta `SOUND STOP` (un motor, la lluvia...).
 - `SOUND STOP canal%` detiene un canal; `SOUND STOP` sin número detiene los 12.
+- `SOUND(canal%)` devuelve -1 (verdadero) mientras ese canal suena y 0 cuando está libre; `SOUND(0)` dice
+  si suena algún canal.
 - Archivo erróneo: *File not found* / *Illegal function call*; canal, volumen o pan fuera de rango o un
   número que no haya devuelto `SOUND archivo$`: *Illegal function call*.
 
@@ -510,6 +564,37 @@ SCREEN FULL                ' el juego a pantalla completa
 SCREEN WINDOW              ' de vuelta a una ventana antes de mostrar las puntuaciones
 ```
 
+### DIR$, CURDIR$ y SETMEM (funciones de QuickBASIC)
+
+```
+f$ = DIR$[(archivo$[, atributos%])]
+d$ = CURDIR$[(unidad$)]
+tamaño& = SETMEM(expresión-numérica&)
+```
+
+Funciones de QuickBASIC 4.5 / PDS 7.1 que usaban muchos programas de la época:
+
+- `DIR$(patrón$)` devuelve el primer archivo que coincide con `patrón$` (comodines `*` y `?`, con o sin
+  ruta); `DIR$` sin argumentos devuelve el siguiente, y `""` cuando no hay más. Con `atributos%` `&H10`
+  también se listan los directorios. Nunca devuelve `.` ni `..`.
+- `CURDIR$` devuelve el directorio actual como ruta nativa (`C:\JUEGOS` en Windows, `/home/usuario/juegos`
+  en Linux). El argumento de unidad se acepta y se ignora.
+- `SETMEM(n&)` agrandaba o reducía el *far heap* para dejar sitio a librerías en ensamblador. QBLike no
+  tiene ese límite: solo lleva la cuenta (393216 bytes al empezar) y la devuelve, así que
+  `dummy& = SETMEM(-66000)` funciona como siempre.
+
+Ninguna es palabra reservada: un programa con su propia variable, array o `FUNCTION` con uno de estos
+nombres lo sigue usando.
+
+```basic
+f$ = DIR$("*.BAS")
+DO WHILE LEN(f$)
+    PRINT f$
+    f$ = DIR$
+LOOP
+PRINT "en "; CURDIR$
+```
+
 ---
 
 ## Hardware emulado
@@ -521,7 +606,7 @@ y los juegos nuevos funcionen igual.
 
 | Segmento (`DEF SEG =`) | Modo | Contenido |
 |---|---|---|
-| `&HA000` | SCREEN 13 | lineal, un byte por píxel; desplazamiento = `y * 320 + x` (64000 bytes) |
+| `&HA000` | SCREEN 13 | lineal, un byte por píxel; desplazamiento = `y * 320 + x` (64000 bytes), en la página activa |
 | `&HA000` | SCREEN 7, 8, 9, 12 | planar EGA/VGA: 4 planos de bits (azul, verde, rojo, intensidad); cada byte son 8 píxeles seguidos de un plano; desplazamiento = `y * (ancho \ 8) + x \ 8` |
 | `&HB800` | SCREEN 1, 2, 3 | CGA: líneas pares desde 0 y líneas impares desde `&H2000`, 80 bytes por línea (4 píxeles por byte en SCREEN 1, 8 en SCREEN 2, 2 en SCREEN 3) |
 | `&HB800` | SCREEN 0 | pares carácter/atributo; desplazamiento = `(fila * columnas + columna) * 2`; cada página ocupa 4096 bytes en 80×25 (2048 en 40×25) |
@@ -547,6 +632,46 @@ bit del color. Qué planos se escriben y cuál se lee se elige con los registros
 Cada plano ocupa `ancho * alto / 8` bytes: 8000 en SCREEN 7, 16000 en SCREEN 8, 28000 en SCREEN 9 y 38400
 en SCREEN 12. Las páginas siguen a la primera cada 8 KB (SCREEN 7), 16 KB (SCREEN 8) o 32 KB (SCREEN 9);
 el desplazamiento elige la página, no `SCREEN ,,apage`. Los registros vuelven a sus valores por defecto con cada `SCREEN`.
+
+### Arrays en memoria (VARSEG / VARPTR)
+
+QBLike da a cada array numérico una dirección en la memoria convencional emulada la primera vez que se usa
+`VARSEG` o `VARPTR` sobre uno de sus elementos. A partir de ahí `PEEK`, `POKE`, `BLOAD`, `BSAVE` y
+`GET`/`PUT ... SEG` ven los bytes del array en esa dirección, igual que en QBasic:
+
+```basic
+DIM spr%(129)
+DEF SEG = VARSEG(spr%(0))
+o& = VARPTR(spr%(0))
+POKE o& + 4, 15                  ' primer píxel de una imagen de GET
+PRINT PEEK(o&), PEEK(o& + 1)     ' byte bajo y alto de spr%(0)
+DEF SEG
+```
+
+- Las direcciones están en los rangos `&H1000`-`&H9FFF` y `&HC000`-`&HEFFF` (segmentos), alineadas a 16
+  bytes, y no cambian mientras el array existe. `VARSEG` y `VARPTR` devuelven valores INTEGER, como en
+  QBasic (los desplazamientos de más de 32767 salen negativos); `PEEK`/`POKE` los aceptan de las dos formas.
+- Una dirección que no pertenece a ningún array (fuera de las zonas de vídeo, BIOS y arrays) da
+  *Illegal function call* en `PUT ... SEG`/`GET ... SEG`; ahí `PEEK` devuelve 0 y `POKE` no hace nada.
+- `REDIM` y `ERASE` de un array dinámico liberan su dirección; las cadenas y las variables simples no
+  tienen dirección (`VARSEG`/`VARPTR` devuelven 0).
+
+### Páginas en SCREEN 13
+
+En QBLike `SCREEN 13` tiene **64 páginas** (QBasic tenía una), que se usan como en SCREEN 7:
+`SCREEN 13, , pactiva, pvisible` o, sin cambiar de modo, `SCREEN , , pactiva` para dibujar en una página
+oculta, y `PCOPY` para copiar páginas. `PEEK`/`POKE` en `&HA000` y todas las instrucciones de dibujo
+trabajan sobre la página activa. Las páginas solo ocupan memoria cuando se usan.
+
+```basic
+SCREEN 13, , 1, 0                ' dibuja en la página 1, muestra la 0
+DO
+    LINE (0, 0)-(319, 199), 0, BF
+    ... dibuja el fotograma ...
+    WAIT VSYNC
+    PCOPY 1, 0
+LOOP UNTIL MULTIKEY(1)
+```
 
 ### Sincronización vertical (INP &H3DA, WAIT, WAIT VSYNC)
 
@@ -678,10 +803,18 @@ informan de que no hay interfaz MIDI en lugar de quedarse colgadas.
 Estos reproductores suelen sacar el ritmo de `ON PLAY(n) GOSUB` y `PLAY "MB..."` con `VARPTR$`; QBLike lo
 implementa todo como QBasic (una cola de música en segundo plano real, de hasta 32 notas).
 
-### Reloj de la BIOS (PEEK &H46C)
+### Datos de la BIOS (PEEK &H46C, &H449...)
 
-Con `DEF SEG = 0`, `PEEK(&H46C)` a `PEEK(&H46F)` dan el contador de ticks del reloj desde medianoche
-(18,2 por segundo), igual que en la BIOS de un PC.
+Con `DEF SEG = 0`, como en la BIOS de un PC:
+
+| Dirección | Contenido |
+|---|---|
+| `&H46C`-`&H46F` | contador de ticks del reloj desde medianoche (18,2 por segundo) |
+| `&H417` | estado del teclado (ver [Teclado](#teclado-inp-h60-peek-h417)) |
+| `&H449` | modo de vídeo actual: 3 en SCREEN 0 (1 en 40 columnas), `&H13` en SCREEN 13, `&H12` en SCREEN 12... |
+| `&H44A` | columnas de texto |
+| `&H462` | página visible |
+| `&H484` | filas de texto menos 1 |
 
 ### BLOAD / BSAVE
 
@@ -772,6 +905,17 @@ FOR p = 0 TO 3
 NEXT
 DEF SEG
 ```
+
+---
+
+## Librería DirectQB
+
+La carpeta `lib/directqb` contiene `DIRECTQB.BI`, una capa de compatibilidad con **DirectQB 1.61**, la
+librería en ensamblador para juegos en QuickBASIC de Angelo Mottola (Enhanced Creations, 1998-99).
+Implementa todos los SUB y FUNCTION de DirectQB en BASIC de QBLike puro, sobre las extensiones de arriba
+(páginas de SCREEN 13 como capas, `GET`/`PUT ... SEG`, `VARSEG`/`VARPTR`, `MULTIKEY`, `MOUSE`, `SOUND`), así
+que los juegos antiguos funcionan conservando su línea `'$INCLUDE: 'DIRECTQB.BI'`. Ver
+[lib/directqb/README_es.md](lib/directqb/README_es.md).
 
 ---
 
