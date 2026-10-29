@@ -696,7 +696,7 @@ thread_ptr_t thread_create( int (*thread_proc)( void* ), void* user_data, int st
 
         DWORD thread_id;
         HANDLE handle = CreateThread( NULL, stack_size > 0 ? (size_t)stack_size : 0U,
-            (LPTHREAD_START_ROUTINE)(uintptr_t) thread_proc, user_data, 0, &thread_id );
+            (LPTHREAD_START_ROUTINE)(uintptr_t) thread_proc, user_data, stack_size > 0 ? 0x00010000 /* STACK_SIZE_PARAM_IS_A_RESERVATION */ : 0, &thread_id );
         if( !handle ) return NULL;
 
         return (thread_ptr_t) handle;

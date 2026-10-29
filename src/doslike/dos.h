@@ -3247,7 +3247,7 @@ static int app_proc( app_t* app, void* user_data ) {
     /* QBLike: the interpreter recurses for every SUB/FUNCTION call, so the program thread gets a large
        stack of its own (the default is only 1 MB on Windows) */
     thread_ptr_t user_thread = thread_create( user_thread_proc, &user_thread_context,
-        64 * 1024 * 1024 );
+        256 * 1024 * 1024 );   /* QBLike: deep SUB/FUNCTION recursion (reserved, not committed) */
 
     if( !thread_signal_wait( &user_thread_context.user_thread_initialized, 5000 ) ) {
         thread_signal_term( &user_thread_context.user_thread_initialized );

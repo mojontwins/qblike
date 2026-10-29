@@ -41,29 +41,48 @@ static void native_name(const char *in, int len, char *out, int outsz, int for_r
     for (int i = 0; i < n; i++) if (out[i] == '\\') out[i] = '/';
     /* strip drive letter */
     if (n >= 2 && isalpha((unsigned char)out[0]) && out[1] == ':') { memmove(out, out + 2, (size_t)(n - 1)); n -= 2; }
-    if (!for_read) return;
-    FILE *t = fopen(out, "rb");
-    if (t) { fclose(t); return; }
-    /* case-insensitive search of the last component */
-    char dir[1024], base[512];
-    char *slash = strrchr(out, '/');
-    if (slash) {
-        int dl = (int)(slash - out);
-        memcpy(dir, out, (size_t)dl); dir[dl] = 0;
-        if (dl == 0) strcpy(dir, "/");
-        snprintf(base, sizeof base, "%s", slash + 1);
-    } else { strcpy(dir, "."); snprintf(base, sizeof base, "%s", out); }
-    DIR *d = opendir(dir);
-    if (!d) return;
-    struct dirent *de;
-    while ((de = readdir(d))) {
-        if (str_ieq(de->d_name, base)) {
-            if (slash) snprintf(out, (size_t)outsz, "%s/%s", strcmp(dir, "/") == 0 ? "" : dir, de->d_name);
-            else snprintf(out, (size_t)outsz, "%s", de->d_name);
-            break;
+    (void)for_read;
+    /* DOS names are case-insensitive: resolve each component of the path against the real
+       directory entries (DATA\LEVEL1.DAT finds data/Level1.dat). Missing parts are kept as
+       written, so new files and directories are created with the given name. */
+    struct stat st;
+    if (stat(out, &st) == 0) return;
+    char res[1024];
+    const char *p = out;
+    int rl = 0;
+    if (*p == '/') { res[rl++] = '/'; while (*p == '/') p++; }
+    res[rl] = 0;
+    int found_all = 1;
+    while (*p) {
+        const char *e = strchr(p, '/');
+        int cl = e ? (int)(e - p) : (int)strlen(p);
+        char comp[512];
+        if (cl >= (int)sizeof comp) cl = (int)sizeof comp - 1;
+        memcpy(comp, p, (size_t)cl); comp[cl] = 0;
+        char use[512];
+        snprintf(use, sizeof use, "%s", comp);
+        if (found_all && strcmp(comp, ".") && strcmp(comp, "..")) {
+            char probe[1100];
+            snprintf(probe, sizeof probe, "%s%s", rl ? res : "", comp);
+            if (stat(probe, &st) != 0) {
+                DIR *d = opendir(rl ? res : ".");
+                int hit = 0;
+                if (d) {
+                    struct dirent *de;
+                    while ((de = readdir(d))) if (str_ieq(de->d_name, comp)) { snprintf(use, sizeof use, "%s", de->d_name); hit = 1; break; }
+                    closedir(d);
+                }
+                if (!hit) found_all = 0;
+            }
         }
+        int ul = (int)strlen(use);
+        if (rl + ul + 2 >= (int)sizeof res) break;
+        memcpy(res + rl, use, (size_t)ul); rl += ul;
+        p += cl;
+        if (*p == '/') { res[rl++] = '/'; while (*p == '/') p++; }
+        res[rl] = 0;
     }
-    closedir(d);
+    snprintf(out, (size_t)outsz, "%s", res);
 #else
     (void)for_read;
 #endif
@@ -428,6 +447,63 @@ static int wild_match(const char *pat, const char *s) {
     return 0;
 }
 
+/* KILL filespec$: deletes files; wildcards * and ? allowed, as in DOS */
+void file_kill(const char *spec, int len) {
+    char pat[512];
+    int n = len < 500 ? len : 500;
+    memcpy(pat, spec, (size_t)n);
+    pat[n] = 0;
+    if (!strpbrk(pat, "*?")) {
+        char path[1024];
+        native_name(pat, n, path, sizeof path, 1);
+        if (remove(path) != 0) rt_error(53);
+        return;
+    }
+    char dir[600] = ".", mask[256];
+    char *slash = strrchr(pat, '/');
+    char *bs = strrchr(pat, '\\');
+    if (!slash || (bs && bs > slash)) slash = bs;
+    if (slash) {
+        int dl = (int)(slash - pat);
+        if (dl == 0) strcpy(dir, "/");
+        else native_name(pat, dl, dir, sizeof dir, 1);
+        snprintf(mask, sizeof mask, "%s", slash + 1);
+    } else snprintf(mask, sizeof mask, "%s", pat);
+    if (strcmp(mask, "*.*") == 0) strcpy(mask, "*");
+    int count = 0;
+#ifdef _WIN32
+    char q[700];
+    snprintf(q, sizeof q, "%s\\*", dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(q, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            if (!wild_match(mask, fd.cFileName)) continue;
+            char full[1100];
+            snprintf(full, sizeof full, "%s\\%s", dir, fd.cFileName);
+            if (remove(full) == 0) count++;
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+#else
+    DIR *d = opendir(dir);
+    if (d) {
+        struct dirent *de;
+        while ((de = readdir(d))) {
+            if (!wild_match(mask, de->d_name)) continue;
+            char full[1100];
+            snprintf(full, sizeof full, "%s/%s", dir, de->d_name);
+            struct stat st;
+            if (stat(full, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+            if (remove(full) == 0) count++;
+        }
+        closedir(d);
+    }
+#endif
+    if (count == 0) rt_error(53);
+}
+
 void file_files(const char *spec, int len) {
     char pat[512];
     int n = len < 500 ? len : 500;
@@ -440,7 +516,8 @@ void file_files(const char *spec, int len) {
     char mask[256];
     if (slash) {
         int dl = (int)(slash - pat);
-        memcpy(dir, pat, (size_t)dl); dir[dl] = 0;
+        if (dl == 0) strcpy(dir, "/");
+        else native_name(pat, dl, dir, sizeof dir, 1);
         snprintf(mask, sizeof mask, "%s", slash + 1);
     } else snprintf(mask, sizeof mask, "%s", pat);
     if (!mask[0] || strcmp(mask, "*.*") == 0) strcpy(mask, "*");

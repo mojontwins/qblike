@@ -87,7 +87,8 @@ PC speaker sound with `BEEP`, `SOUND` and `PLAY`. In SCREEN 2, `OUT &H3D8, 26` t
 ### Game extensions
 
 The full reference of all new statements and emulated hardware is in
-[EXTENSIONES_en.md](EXTENSIONES_en.md).
+[EXTENSIONES_en.md](EXTENSIONES_en.md). The reference of the whole language (QBasic 1.1 plus the
+extensions, the same text as the editor's F1 help) is in [REFERENCE.md](REFERENCE.md).
 
 The hardware tricks used by DOS games are emulated, and there are a few additions:
 
@@ -194,6 +195,7 @@ No build system is needed: it compiles with a single compiler command.
 | `src/clip.c` | system clipboard |
 | `src/image.c` | BMP and GIF loading (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
 | `src/beautify.c` | code formatter (Edit > Format Code) |
+| `tools/help2md.py` | rebuilds `REFERENCE.md` from the built-in help: `qblike --help-dump > help.txt` then `python3 tools/help2md.py help.txt > REFERENCE.md` |
 | `src/doslike/` | dos-like (with a few small changes, below) |
 
 Changes to dos-like: `setcrtmode()` to turn the CRT effect on or off at run time, Alt+Enter for
@@ -202,6 +204,28 @@ activating the window's system menu (which blocked the keyboard), handling `SIGT
 (`SDL_QUIT`), a 64 MB stack for the program thread (deep SUB/FUNCTION recursion), and a timestamped OPL write queue (`dos_opl_write`) mixed with the rest of the audio, OPL output resampled from the chip rate (49716 Hz) to 44100 Hz and MIDI on the OPL tuned one octave down (both played too high), and MOD music that can end instead of always looping. It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
 (QBLike draws its own mouse cursor, like the DOS driver: an arrow in graphics modes, an inverted block in
 text mode).
+
+### Memory limits
+
+QBasic ran in real-mode DOS, with 64 KB per array, about 60 KB for all strings together and a few
+hundred levels of SUB/FUNCTION recursion. QBLike has none of those limits:
+
+| | QBasic 1.1 | QBLike |
+|---|---|---|
+| Array size | 64 KB | up to 64 million elements per array, as far as memory goes |
+| Array subscripts | -32768 to 32767 | the whole LONG range |
+| String length | 32767 characters | 1 GB |
+| Memory for all strings | ~60 KB | all available memory |
+| SUB/FUNCTION recursion | a few hundred levels | about 100000 levels (then *Out of stack space*) |
+| Program size | ~64 KB of code per module | no limit |
+| Open files | 15 | 255 |
+
+`LEN` and `INSTR` return LONG, so they work with long strings. `FRE("")` and `FRE(-1)` return
+268435456 (256 MB) and `FRE(-2)` 67108864, so programs that check the free memory before starting
+find plenty. Each array element takes 40 bytes whatever its type, so a 10-million-element array
+needs 400 MB. When memory runs out the program gets *Out of memory* (error 7), which `ON ERROR`
+can catch. Fixed-length strings (`STRING * n`) and `RANDOM` records keep QBasic's limit of
+32767 bytes, so the files stay compatible.
 
 ### Known limitations
 
@@ -302,7 +326,8 @@ monitor compuesto NTSC.
 ### Extensiones para juegos
 
 La referencia completa de todas las instrucciones nuevas y del hardware emulado está en
-[EXTENSIONES_es.md](EXTENSIONES_es.md).
+[EXTENSIONES_es.md](EXTENSIONES_es.md). La referencia de todo el lenguaje (QBasic 1.1 más las
+extensiones, el mismo texto que la ayuda F1 del editor, en inglés) está en [REFERENCE.md](REFERENCE.md).
 
 Se emulan los trucos de hardware que usaban los juegos de DOS, y hay dos añadidos:
 
@@ -411,6 +436,7 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 | `src/clip.c` | portapapeles del sistema |
 | `src/image.c` | carga de BMP y GIF (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
 | `src/beautify.c` | formateador de código (Edit > Format Code) |
+| `tools/help2md.py` | regenera `REFERENCE.md` a partir de la ayuda integrada: `qblike --help-dump > help.txt` y luego `python3 tools/help2md.py help.txt > REFERENCE.md` |
 | `src/doslike/` | dos-like (con dos pequeños cambios, abajo) |
 
 Cambios en dos-like: `setcrtmode()` para activar o desactivar el efecto CRT en tiempo de ejecución,
@@ -418,6 +444,28 @@ Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera 
 (que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION) y una cola de escrituras al OPL con marca de tiempo (`dos_opl_write`) que se mezcla con el resto del audio, la salida del OPL remuestreada de la frecuencia del chip (49716 Hz) a 44100 Hz y el MIDI por OPL bajado una octava (ambos sonaban más agudos), y música MOD que puede terminar en vez de repetirse siempre. Se compila con `DISABLE_SCREEN_FRAME`
 (sin el marco del monitor) y `DISABLE_SYSTEM_CURSOR` (QBLike dibuja su propio cursor de ratón, como el
 controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
+
+### Límites de memoria
+
+QBasic funcionaba en el modo real de DOS, con 64 KB por array, unos 60 KB para todas las cadenas
+juntas y unos cientos de niveles de recursión de SUB/FUNCTION. QBLike no tiene ninguno de esos límites:
+
+| | QBasic 1.1 | QBLike |
+|---|---|---|
+| Tamaño de un array | 64 KB | hasta 64 millones de elementos por array, hasta donde llegue la memoria |
+| Índices de array | -32768 a 32767 | todo el rango LONG |
+| Longitud de una cadena | 32767 caracteres | 1 GB |
+| Memoria para todas las cadenas | ~60 KB | toda la memoria disponible |
+| Recursión de SUB/FUNCTION | unos cientos de niveles | unos 100000 niveles (después, *Out of stack space*) |
+| Tamaño del programa | ~64 KB de código por módulo | sin límite |
+| Archivos abiertos | 15 | 255 |
+
+`LEN` e `INSTR` devuelven LONG, así que funcionan con cadenas largas. `FRE("")` y `FRE(-1)`
+devuelven 268435456 (256 MB) y `FRE(-2)` 67108864, de modo que los programas que comprueban la memoria
+libre antes de empezar encuentran de sobra. Cada elemento de un array ocupa 40 bytes sea del tipo que sea,
+así que un array de 10 millones de elementos necesita 400 MB. Si se acaba la memoria, el programa recibe
+*Out of memory* (error 7), que `ON ERROR` puede atrapar. Las cadenas de longitud fija (`STRING * n`) y los
+registros `RANDOM` mantienen el límite de 32767 bytes de QBasic, para que los archivos sigan siendo compatibles.
 
 ### Limitaciones conocidas
 

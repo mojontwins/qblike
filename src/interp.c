@@ -78,10 +78,13 @@ static void array_dim(Array *a, int nd, int *lb, int *ub, int preserve) {
     long long count = 1;
     for (int i = 0; i < nd; i++) {
         if (ub[i] < lb[i]) rt_error(9);
-        count *= (long long)(ub[i] - lb[i] + 1);
+        count *= (long long)ub[i] - lb[i] + 1;
+        if (count > 64LL * 1024 * 1024) rt_error(7);
     }
-    if (count > 16 * 1024 * 1024) rt_error(7);
-    Value *nv = (Value *)qb_alloc(sizeof(Value) * (size_t)count);
+    /* QBasic: 64 KB per array. QBLike: up to 64M elements, as far as memory goes */
+    if (count > 64LL * 1024 * 1024) rt_error(7);
+    Value *nv = (Value *)calloc((size_t)count, sizeof(Value));
+    if (!nv) rt_error(7);
     for (long long i = 0; i < count; i++) val_init(&nv[i], a->t, a->udt, a->fixlen);
     if (preserve && a->alive) {
         /* QBasic PRESERVE keeps elements in linear order */
@@ -105,13 +108,25 @@ static Array *arr_slot(int scope, int idx) {
 static double evn(Expr *e);
 static void evs(Expr *e, char **p, int *len);
 
+/* Linear position of an element. QBasic stores arrays in column-major order: the FIRST subscript
+   varies fastest (a(0,0), a(1,0), a(0,1)...), the opposite of C. It matters for GET/PUT, BLOAD/BSAVE
+   and REDIM PRESERVE on arrays of two or more dimensions: GET (0,0)-(15,15), spr%(0, i%). */
+static long long arr_offset(Array *a, const int *idx) {
+    long long off = 0;
+    for (int i = a->nd - 1; i >= 0; i--) {
+        if (idx[i] < a->lb[i] || idx[i] > a->ub[i]) rt_error(9);
+        off = off * ((long long)a->ub[i] - a->lb[i] + 1) + ((long long)idx[i] - a->lb[i]);
+    }
+    return off;
+}
+
 static Value *arr_elem(Array *a, Expr **args, int nargs) {
     int idx[8];
     if (nargs > 8) rt_error(9);
     for (int i = 0; i < nargs; i++) {
         double d = evn(args[i]);
         d = qb_round_even(d);
-        if (d < -32768 || d > 2147483647.0) rt_error(9);
+        if (d < -2147483648.0 || d > 2147483647.0) rt_error(9);
         idx[i] = (int)d;
     }
     if (!a->alive) {
@@ -122,12 +137,7 @@ static Value *arr_elem(Array *a, Expr **args, int nargs) {
         a->dynamic = 0;
     }
     if (nargs != a->nd) rt_error(9);
-    long long off = 0;
-    for (int i = 0; i < nargs; i++) {
-        if (idx[i] < a->lb[i] || idx[i] > a->ub[i]) rt_error(9);
-        off = off * (a->ub[i] - a->lb[i] + 1) + (idx[i] - a->lb[i]);
-    }
-    return &a->v[off];
+    return &a->v[arr_offset(a, idx)];
 }
 
 /* ------------------------------------------------------------------ */
@@ -383,7 +393,7 @@ static void evs(Expr *e, char **p, int *len) {
             char *a, *b; int al, bl;
             evs(e->a, &a, &al);
             evs(e->b, &b, &bl);
-            if ((long)al + bl > 32767 * 2) { free(a); free(b); rt_error(14); }
+            if ((long long)al + bl > QB_STRMAX) { free(a); free(b); rt_error(14); }
             char *r = (char *)qb_alloc((size_t)(al + bl) + 1);
             memcpy(r, a, (size_t)al);
             memcpy(r + al, b, (size_t)bl);
@@ -504,10 +514,22 @@ static Frame *make_proc_frame(int pi, Expr **args, int nargs) {
     return f;
 }
 
+/* Out of stack space: the program thread has a 256 MB stack; stop well before it runs out
+   (each SUB/FUNCTION level takes ~2 KB, so about 100000 levels; QBasic allowed a few hundred) */
+extern char *g_stack_base;
+static void check_stack(void) {
+    char here;
+    if (g_stack_base) {
+        long long used = (long long)(g_stack_base - &here);
+        if (used > 200LL * 1024 * 1024 && used < 1024LL * 1024 * 1024) rt_error(28);
+    }
+    if (depth > 1000000) rt_error(28);
+}
+
 static void run_proc(int pi, Expr **args, int nargs) {
     Program *P = rs->prog;
     Proc *p = &P->procs[pi];
-    if (depth > 2000) rt_error(28);   /* Out of stack space */
+    check_stack();
     Frame *f = make_proc_frame(pi, args, nargs);
     f->parent = rs->cur;
     Frame *saved = rs->cur;
@@ -522,7 +544,7 @@ static double call_function(Expr *e) {
     Program *P = rs->prog;
     int pi = e->idx;
     Proc *p = &P->procs[pi];
-    if (depth > 2000) rt_error(28);   /* Out of stack space */
+    check_stack();
     Frame *f = make_proc_frame(pi, e->args, e->nargs);
     f->parent = rs->cur;
     Frame *saved = rs->cur;
@@ -649,7 +671,12 @@ static double builtin_num(Expr *e) {
         case F_ERR: return rs->err;
         case F_ERL: return rs->erl;
         case F_ERDEV: return 0;
-        case F_FRE: return 60000;
+        case F_FRE: {
+            /* QBasic reported a few tens of KB; QBLike has no such limits, so report plenty
+               (but well inside LONG, in case a program does arithmetic with it) */
+            if (e->nargs && e->args[0]->type != T_STR && qb_round_even(evn(e->args[0])) == -2) return 64.0 * 1024 * 1024;
+            return 256.0 * 1024 * 1024;
+        }
         case F_INP: {
             int port = argi(e, 0);
             if (port == 0x60) return kb_lastscan();
@@ -658,7 +685,7 @@ static double builtin_num(Expr *e) {
         }
         case F_INSTR: {
             int start = 1, ai = 0;
-            if (e->nargs == 3) { start = argi(e, 0); ai = 1; if (start < 1 || start > 32767) rt_error(5); }
+            if (e->nargs == 3) { start = argi(e, 0); ai = 1; if (start < 1 || start > QB_STRMAX) rt_error(5); }
             char *a, *b; int al, bl;
             evs(e->args[ai], &a, &al);
             evs(e->args[ai + 1], &b, &bl);
@@ -777,7 +804,7 @@ static void builtin_str(Expr *e, char **p, int *len) {
         case F_MID: {
             char *s; int l; evs(e->args[0], &s, &l);
             int st = argi(e, 1);
-            int n = e->nargs > 2 ? argi(e, 2) : 32767;
+            int n = e->nargs > 2 ? argi(e, 2) : l;
             if (st < 1 || n < 0) { free(s); rt_error(5); }
             if (st > l) { free(s); ret_str(p, len, "", 0); return; }
             if (n > l - st + 1) n = l - st + 1;
@@ -806,7 +833,7 @@ static void builtin_str(Expr *e, char **p, int *len) {
         }
         case F_SPACE: {
             int n = argi(e, 0);
-            if (n < 0 || n > 32767) rt_error(5);
+            if (n < 0 || n > QB_STRMAX) rt_error(5);
             *p = (char *)qb_alloc((size_t)n + 1);
             memset(*p, ' ', (size_t)n);
             *len = n;
@@ -814,7 +841,7 @@ static void builtin_str(Expr *e, char **p, int *len) {
         }
         case F_STRING: {
             int n = argi(e, 0);
-            if (n < 0 || n > 32767) rt_error(5);
+            if (n < 0 || n > QB_STRMAX) rt_error(5);
             int c;
             if (e->args[1]->type == T_STR) {
                 char *s; int l; evs(e->args[1], &s, &l);
@@ -867,7 +894,18 @@ static void builtin_str(Expr *e, char **p, int *len) {
                 free(s);
                 ret_str(p, len, v ? v : "", v ? (int)strlen(v) : 0);
             } else {
-                ret_str(p, len, "", 0);
+                /* ENVIRON$(n): the n-th "NAME=value" string, "" past the end */
+                int n = argi(e, 0);
+                if (n < 1 || n > 255) rt_error(5);
+#ifdef _WIN32
+                char **env = _environ;
+#else
+                extern char **environ;
+                char **env = environ;
+#endif
+                const char *v = "";
+                for (int i = 1; env && env[i - 1]; i++) if (i == n) { v = env[i - 1]; break; }
+                ret_str(p, len, v, (int)strlen(v));
             }
             return;
         }
@@ -1298,7 +1336,7 @@ static void check_events(void) {
 static void gosub_push(Frame *f, int ret) {
     if (f->ngosub >= f->capgosub) {
         f->capgosub = f->capgosub ? f->capgosub * 2 : 16;
-        if (f->capgosub > 100000) rt_error(28);
+        if (f->capgosub > 16 * 1024 * 1024) rt_error(28);
         f->gosub = (int *)qb_realloc(f->gosub, sizeof(int) * (size_t)f->capgosub);
     }
     f->gosub[f->ngosub++] = ret;
@@ -1353,11 +1391,9 @@ static int array_target(Stmt *s, Array **out) {
     long off = 0;
     if (s->nargs) {
         if (s->nargs != a->nd) rt_error(9);
-        for (int i = 0; i < s->nargs; i++) {
-            int ix = (int)qb_round_even(evn(s->args[i]));
-            if (ix < a->lb[i] || ix > a->ub[i]) rt_error(9);
-            off = off * (a->ub[i] - a->lb[i] + 1) + (ix - a->lb[i]);
-        }
+        int idx[8];
+        for (int i = 0; i < s->nargs && i < 8; i++) idx[i] = (int)qb_round_even(evn(s->args[i]));
+        off = (long)arr_offset(a, idx);
     }
     *out = a;
     return (int)off;
@@ -1550,8 +1586,10 @@ static int exec(Frame *f, int pc) {
                 int lb[8], ub[8];
                 for (int i = 0; i < s->i3; i++) {
                     Expr *l = s->args[i * 2], *u = s->args[i * 2 + 1];
-                    lb[i] = l ? (int)qb_round_even(evn(l)) : rs->optionbase;
-                    ub[i] = (int)qb_round_even(evn(u));
+                    double dl = l ? qb_round_even(evn(l)) : rs->optionbase, du = qb_round_even(evn(u));
+                    if (dl < -2147483648.0 || dl > 2147483647.0 || du < -2147483648.0 || du > 2147483647.0) rt_error(9);
+                    lb[i] = (int)dl;
+                    ub[i] = (int)du;
                 }
                 if (s->op == S_DIM && a->alive) {
                     if (a->prealloc) { pc++; break; }   /* static array, allocated at program start */
@@ -1755,11 +1793,9 @@ static int exec(Frame *f, int pc) {
                     /* compute linear index of the element */
                     long long off = 0;
                     if (s->nargs != a->nd) rt_error(9);
-                    for (int i = 0; i < s->nargs; i++) {
-                        int ix = (int)qb_round_even(evn(s->args[i]));
-                        if (ix < a->lb[i] || ix > a->ub[i]) rt_error(9);
-                        off = off * (a->ub[i] - a->lb[i] + 1) + (ix - a->lb[i]);
-                    }
+                    int idx[8];
+                    for (int i = 0; i < s->nargs && i < 8; i++) idx[i] = (int)qb_round_even(evn(s->args[i]));
+                    off = arr_offset(a, idx);
                     index = (int)off;
                 }
                 if (s->op == S_GETG)
@@ -1934,18 +1970,27 @@ static int exec(Frame *f, int pc) {
                 evs(s->e1, &p, &l);
                 int r = 0;
                 if (s->op == S_KILL) {
-                    /* wildcards not supported; plain file delete */
-                    r = remove(p);
-                    if (r) { free(p); rt_error(53); }
-                } else if (s->op == S_MKDIR) {
+                    extern void file_kill(const char *spec, int len);
+                    char buf[600];
+                    int bl = l < 590 ? l : 590;
+                    memcpy(buf, p, (size_t)bl);
+                    free(p); p = NULL;
+                    file_kill(buf, bl);
+                } else {
+                    extern void file_native_name(const char *in, int len, char *out, int outsz, int for_read);
+                    char path[1024];
+                    file_native_name(p, l, path, sizeof path, s->op != S_MKDIR);
+                    free(p); p = NULL;
+                    if (s->op == S_MKDIR) {
 #ifdef _WIN32
-                    r = _mkdir(p);
+                        r = _mkdir(path);
 #else
-                    r = mkdir(p, 0777);
+                        r = mkdir(path, 0777);
 #endif
-                    if (r) { free(p); rt_error(75); }
-                } else if (s->op == S_RMDIR) { r = rmdir(p); if (r) { free(p); rt_error(75); } }
-                else { r = chdir(p); if (r) { free(p); rt_error(76); } }
+                        if (r) rt_error(75);
+                    } else if (s->op == S_RMDIR) { r = rmdir(path); if (r) rt_error(75); }
+                    else { r = chdir(path); if (r) rt_error(76); }
+                }
                 free(p);
                 pc++;
                 break;
@@ -1994,7 +2039,7 @@ static int exec(Frame *f, int pc) {
             case S_MIDSTMT: {
                 Value *v = lval(s->e1);
                 int st = (int)qb_round_even(evn(s->e2));
-                int n = s->e3 ? (int)qb_round_even(evn(s->e3)) : 32767;
+                int n = s->e3 ? (int)qb_round_even(evn(s->e3)) : QB_STRMAX;
                 char *r; int rl;
                 evs(s->e4, &r, &rl);
                 if (st < 1 || st > v->slen || n < 0) { free(r); rt_error(5); }

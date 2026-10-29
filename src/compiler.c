@@ -617,7 +617,7 @@ static Expr *parse_builtin(int kw) {
             expectop(')');
             return e;
         case KW_INSTR: {
-            e->sub = F_INSTR; e->type = T_INT;
+            e->sub = F_INSTR; e->type = T_LNG;
             expectop('(');
             Expr *a = parse_expr();
             expectop(',');
@@ -661,7 +661,7 @@ static Expr *parse_builtin(int kw) {
             return e;
         }
         case KW_LEN: {
-            e->sub = F_LEN; e->type = T_INT;
+            e->sub = F_LEN; e->type = T_LNG;
             expectop('(');
             Expr *a = parse_expr();
             if (a->type != T_STR) {
@@ -2265,6 +2265,13 @@ static void compile_statement(void) {
     adv();
     switch (kw) {
         case KW_LET: compile_assignment(); return;
+        case KW_DATE_S: case KW_TIME_S: {
+            /* DATE$ = "mm-dd-yyyy" / TIME$ = "hh:mm:ss" set the DOS clock: accepted, the system
+               clock is not changed */
+            expectop('=');
+            Expr *x = parse_str_expr(); free_expr(x);
+            return;
+        }
         case KW_PRINT:
             if (acceptop('#')) compile_print(S_PRINT, 1);
             else compile_print(S_PRINT, 0);

@@ -35,6 +35,8 @@ enum {
 
 typedef struct Rec Rec;
 
+#define QB_STRMAX (1 << 30)   /* longest string: 1 GB (QBasic: 32767 characters) */
+
 typedef struct Value {
     uint8_t t;
     int32_t fixlen;     /* fixed-length string size (0 = variable) */

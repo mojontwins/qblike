@@ -89,7 +89,11 @@ static int run_file(const char *path, int wait_end) {
     return exitcode;
 }
 
+char *g_stack_base;   /* top of the program thread's stack, to detect "Out of stack space" */
+
 int main(int argc, char *argv[]) {
+    char stack_mark;
+    g_stack_base = &stack_mark;
     const char *file = NULL;
     int run = 0, runexit = 0;
     for (int i = 1; i < argc; i++) {
@@ -100,6 +104,11 @@ int main(int argc, char *argv[]) {
         else if (a[0] != '-' || a[1] == 0) file = a;
     }
     /* hidden test aid: qblike --beautify file.bas  prints the formatted program */
+    if (argc >= 2 && !strcmp(argv[1], "--help-dump")) {   /* raw help text, see tools/help2md.py */
+        extern void help_dump(void);
+        help_dump();
+        return 0;
+    }
     if (argc >= 3 && !strcmp(argv[1], "--beautify")) {
         extern char **qb_beautify(char **lines, int n, int base, int indent, int (*fmt)(const char *, char *, int), int *outn);
         extern int ide_format_text(const char *in, char *out, int outsz);
