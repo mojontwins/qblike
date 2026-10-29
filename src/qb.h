@@ -518,6 +518,7 @@ int  ide_debug_break(int stmt);    /* called by runtime when stopping */
 int  ide_is_breakpoint(int part, int line);
 extern int g_ide_active;
 extern int g_headless_test;
+extern char g_command[1024];   /* COMMAND$: arguments after the program name */
 void ide_main(int argc, char **argv);
 
 /* strings helpers */

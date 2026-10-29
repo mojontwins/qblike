@@ -241,7 +241,7 @@ def main():
              + ', '.join(f'[{t}](#{anchor(t, "topic")})' for t in ('Data Types', 'Operators', 'Errors', 'Game Programming')))
     o.append('- [Keyword reference](#keyword-reference)')
     o.append('- [The editor](#the-editor): '
-             + ', '.join(f'[{t}](#{anchor(t, "topic")})' for t in ('Editing Keys', 'Debugging', 'Menus', 'Using Help')))
+             + ', '.join(f'[{t}](#{anchor(t, "topic")})' for t in ('Editing Keys', 'Debugging', 'Make EXE', 'Menus', 'Using Help')))
     o.append('')
 
     o.append('## QBLike compared with QBasic\n')
@@ -257,6 +257,8 @@ def main():
              'about 100000 levels of SUB/FUNCTION recursion (see ' + lk.link('FRE') + ').')
     o.append('- **Behavior changes**: ' + lk.link('PUT') + ' clips images that go off the screen instead of '
              'failing; ' + lk.link('LEN') + ' and ' + lk.link('INSTR') + ' return LONG.')
+    o.append('- **From QuickBASIC**: ' + lk.link('COMMAND$') + ', and stand-alone executables with '
+             + lk.link('Make EXE') + ' (the run-time module qbrun, like BRUN45.EXE).')
     o.append('- **Not available**: ' + lk.link('CHAIN') + ', `CALL ABSOLUTE`/`INTERRUPT`, ' + lk.link('RUN')
              + ' with a file or line, printing (' + lk.link('LPRINT') + ' output is discarded), serial ports, '
              'light pen and joystick (' + lk.link('COM') + ', ' + lk.link('PEN') + ', ' + lk.link('STICK')
@@ -306,7 +308,7 @@ def main():
             o.append('See also: ' + ', '.join(lk.link(n) for n in see_names(e['see'], lk)) + '\n')
 
     o.append('## The editor\n')
-    for t in ('Editing Keys', 'Debugging', 'Menus', 'Using Help'):
+    for t in ('Editing Keys', 'Debugging', 'Make EXE', 'Menus', 'Using Help'):
         if t in topics:
             o.append(topic_md(t, topics[t], lk))
 

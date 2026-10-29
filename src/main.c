@@ -1,5 +1,6 @@
 /* main.c - entry point for QBLike */
 #include "qb.h"
+#include "exepack.h"
 #include "source.h"
 #include "doslike/dos.h"
 #include <stdio.h>
@@ -7,6 +8,7 @@
 #include <string.h>
 
 int g_headless_test = 0;
+char g_command[1024] = "";
 void scr_dump_text(FILE *f);
 void scr_dump_ppm(const char *path);
 void scr_press_any_key(void);
@@ -91,6 +93,86 @@ static int run_file(const char *path, int wait_end) {
 
 char *g_stack_base;   /* top of the program thread's stack, to detect "Out of stack space" */
 
+static int make_exe_cli(int argc, char **argv);
+static int g_cli_result = 0;
+
+/* called by dos-like before the window opens. --make-exe works without opening a window. */
+int qbl_prestart(int argc, char **argv, int *fullscreen) {
+    (void)fullscreen;
+    if (argc >= 2 && !strcmp(argv[1], "--make-exe")) { g_cli_result = make_exe_cli(argc, argv); exit(g_cli_result); }
+    return 1;
+}
+
+/* qblike --make-exe PROGRAM.BAS [OUTPUT] [--fullscreen] [--target windows|linux|macos] */
+static int make_exe_cli(int argc, char **argv) {
+    extern int make_exe(const char *in, const char *out, int flags, int target, char *err, int errsz);
+    const char *in = NULL, *out = NULL;
+    int flags = 0, target = exepack_host_target();
+    for (int i = 2; i < argc; i++) {
+        if (!strcmp(argv[i], "--fullscreen")) flags |= EXE_FULLSCREEN;
+        else if (!strcmp(argv[i], "--window")) flags &= ~EXE_FULLSCREEN;
+        else if (!strcmp(argv[i], "--target") && i + 1 < argc) {
+            const char *t = argv[++i];
+            target = str_ieq(t, "windows") ? EXE_TARGET_WINDOWS : str_ieq(t, "macos") ? EXE_TARGET_MACOS : EXE_TARGET_LINUX;
+        } else if (!in) in = argv[i];
+        else if (!out) out = argv[i];
+    }
+    if (!in) { fprintf(stderr, "usage: qblike --make-exe PROGRAM.BAS [OUTPUT] [--fullscreen] [--target windows|linux|macos]\n"); return 1; }
+    char outbuf[1024];
+    if (!out) {
+        snprintf(outbuf, sizeof outbuf, "%s", in);
+        char *dot = strrchr(outbuf, '.');
+        char *sl = strrchr(outbuf, '/'), *bs = strrchr(outbuf, '\\');
+        if (dot && dot > (sl ? sl : outbuf) && dot > (bs ? bs : outbuf)) *dot = 0;
+        if (target == EXE_TARGET_WINDOWS) strcat(outbuf, ".exe");
+        out = outbuf;
+    }
+    char err[1100];
+    int r = make_exe(in, out, flags, target, err, sizeof err);
+    if (!r) { fprintf(stderr, "%s\n", err); return 1; }
+    printf("%s\n", out);
+    return 0;
+}
+
+/* builds a stand-alone executable from a .BAS file (also used by File > Make EXE) */
+int make_exe(const char *in, const char *out, int flags, int target, char *err, int errsz) {
+    FILE *f = fopen(in, "rb");
+    if (!f) { snprintf(err, (size_t)errsz, "File not found: %s", in); return 0; }
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *src = (char *)qb_alloc((size_t)n + 1);
+    n = (long)fread(src, 1, (size_t)n, f);
+    fclose(f);
+    /* check that it compiles, so a broken program is not packed */
+    Doc d;
+    doc_init(&d);
+    if (doc_load_mem(&d, src, (int)n) <= 0) { doc_free(&d); free(src); snprintf(err, (size_t)errsz, "Cannot read %s", in); return 0; }
+    SrcPart *sp = doc_srcparts(&d);
+    CompileError ce;
+    Program *p = compile_program(sp, d.nparts, &ce);
+    if (!p) {
+        snprintf(err, (size_t)errsz, "%s in %s, line %d", ce.msg, ce.part == 0 ? "main module" : d.parts[ce.part].name, ce.line + 1);
+        free(sp); doc_free(&d); free(src);
+        return 0;
+    }
+    free_program(p);
+    free(sp);
+    doc_free(&d);
+    char rt[1024];
+    if (!exepack_find_runtime(target, rt, sizeof rt)) {
+        snprintf(err, (size_t)errsz, "Runtime not found: %s must be next to QBLike",
+                 target == EXE_TARGET_WINDOWS ? "qbrun.exe" : "qbrun");
+        free(src);
+        return 0;
+    }
+    const char *base = in;
+    for (const char *c = in; *c; c++) if (*c == '/' || *c == '\\') base = c + 1;
+    int ok = exepack_write(rt, out, base, src, (int)n, flags, err, errsz);
+    free(src);
+    return ok;
+}
+
 int main(int argc, char *argv[]) {
     char stack_mark;
     g_stack_base = &stack_mark;
@@ -101,7 +183,13 @@ int main(int argc, char *argv[]) {
         if (str_ieq(a, "/RUN") || str_ieq(a, "-run") || str_ieq(a, "--run")) run = 1;
         else if (str_ieq(a, "/X") || str_ieq(a, "-x") || str_ieq(a, "--exec")) runexit = 1;
         else if (str_ieq(a, "-w") || str_ieq(a, "--window")) continue;
-        else if (a[0] != '-' || a[1] == 0) file = a;
+        else if (a[0] != '-' || a[1] == 0) {
+            if (!file) file = a;
+            else {   /* what follows the program name is its COMMAND$ */
+                size_t l = strlen(g_command);
+                snprintf(g_command + l, sizeof g_command - l, "%s%s", l ? " " : "", a);
+            }
+        }
     }
     /* hidden test aid: qblike --beautify file.bas  prints the formatted program */
     if (argc >= 2 && !strcmp(argv[1], "--help-dump")) {   /* raw help text, see tools/help2md.py */
@@ -134,6 +222,7 @@ int main(int argc, char *argv[]) {
         const char *k = getenv("QBLIKE_KEYS");
         if (k) feed_test_keys(k);
     }
+    if (!runexit) g_command[0] = 0;   /* programs run from the editor get COMMAND$ = "" */
     if (runexit && file) {
         extern void ide_apply_config(void);
         if (!g_headless_test) ide_apply_config();

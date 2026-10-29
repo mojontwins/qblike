@@ -864,6 +864,16 @@ static Expr *parse_lvalue_from_id(int allow_call, int *isfuncret) {
     }
     if (pi >= 0 && !isfuncret) cerr_at(col, "Expected: expression");
 
+    /* COMMAND$ (QuickBASIC): the command line, unless the program has a variable COMMAND$ */
+    if (!isfuncret && allow_call && st == T_STR && !strcmp(base, "COMMAND") && !isop('(')) {
+        int sc;
+        if (!resolve_var(name, 0, 0, &sc)) {
+            Expr *e = enew(E_FUNC, T_STR);
+            e->sub = F_COMMAND;
+            return e;
+        }
+    }
+
     /* MUSIC (QBLike): true while music plays, unless the program has a variable called MUSIC */
     if (!isfuncret && allow_call && st == T_NONE && !strcmp(base, "MUSIC") && !isop('(')) {
         int sc;

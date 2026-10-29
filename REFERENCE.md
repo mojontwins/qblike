@@ -11,7 +11,7 @@ For a guided description of the extensions and the emulated hardware, see [EXTEN
 - [Index](#index)
 - [Language topics](#language-topics): [Data Types](#topic-data-types), [Operators](#topic-operators), [Errors](#topic-errors), [Game Programming](#topic-game-programming)
 - [Keyword reference](#keyword-reference)
-- [The editor](#the-editor): [Editing Keys](#topic-editing-keys), [Debugging](#topic-debugging), [Menus](#topic-menus), [Using Help](#topic-using-help)
+- [The editor](#the-editor): [Editing Keys](#topic-editing-keys), [Debugging](#topic-debugging), [Make EXE](#topic-make-exe), [Menus](#topic-menus), [Using Help](#topic-using-help)
 
 ## QBLike compared with QBasic
 
@@ -21,6 +21,7 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 - **Emulated hardware**: video memory ([DEF SEG](#kw-def-seg), [PEEK](#kw-peek), [POKE](#kw-poke)), VGA/CGA ports and the AdLib FM synthesizer ([INP](#kw-inp), [OUT](#kw-out)), vertical sync ([WAIT](#kw-wait)), BIOS clock and keyboard flags.
 - **No memory limits**: strings up to 1 GB, arrays up to 64 million elements with LONG subscripts, about 100000 levels of SUB/FUNCTION recursion (see [FRE](#kw-fre)).
 - **Behavior changes**: [PUT](#kw-put) clips images that go off the screen instead of failing; [LEN](#kw-len) and [INSTR](#kw-instr) return LONG.
+- **From QuickBASIC**: [COMMAND\$](#kw-command-s), and stand-alone executables with [Make EXE](#topic-make-exe) (the run-time module qbrun, like BRUN45.EXE).
 - **Not available**: [CHAIN](#kw-chain), `CALL ABSOLUTE`/`INTERRUPT`, [RUN](#kw-run) with a file or line, printing ([LPRINT](#kw-lprint) output is discarded), serial ports, light pen and joystick ([COM](#kw-com), [PEN](#kw-pen), [STICK](#kw-stick)), and [KEY](#kw-key) events. They are accepted where possible so old programs still run.
 
 ## Keywords by task
@@ -46,11 +47,11 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 
 **B** — BASE → [OPTION BASE](#kw-option-base) · [BEEP](#kw-beep) · BINARY → [OPEN](#kw-open) · [BLOAD](#kw-bload) · [BSAVE](#kw-bsave)
 
-**C** — [CALL](#kw-call) · [CASE](#kw-case) · [CDBL](#kw-cdbl) · [CHAIN](#kw-chain) · [CHDIR](#kw-chdir) · [CHR\$](#kw-chr-s) · [CINT](#kw-cint) · [CIRCLE](#kw-circle) · [CLEAR](#kw-clear) · [CLIP](#kw-clip) · [CLNG](#kw-clng) · [CLOSE](#kw-close) · [CLS](#kw-cls) · [COLOR](#kw-color) · [COM](#kw-com) · [COMMON](#kw-common) · [CONST](#kw-const) · [COS](#kw-cos) · [CSNG](#kw-csng) · [CSRLIN](#kw-csrlin) · [CVD](#kw-cvd) · CVDMBF → [CVSMBF](#kw-cvsmbf) · [CVI](#kw-cvi) · [CVL](#kw-cvl) · [CVS](#kw-cvs) · [CVSMBF](#kw-cvsmbf)
+**C** — [CALL](#kw-call) · [CASE](#kw-case) · [CDBL](#kw-cdbl) · [CHAIN](#kw-chain) · [CHDIR](#kw-chdir) · [CHR\$](#kw-chr-s) · [CINT](#kw-cint) · [CIRCLE](#kw-circle) · [CLEAR](#kw-clear) · [CLIP](#kw-clip) · [CLNG](#kw-clng) · [CLOSE](#kw-close) · [CLS](#kw-cls) · [COLOR](#kw-color) · [COM](#kw-com) · [COMMAND\$](#kw-command-s) · [COMMON](#kw-common) · [CONST](#kw-const) · [COS](#kw-cos) · [CSNG](#kw-csng) · [CSRLIN](#kw-csrlin) · [CVD](#kw-cvd) · CVDMBF → [CVSMBF](#kw-cvsmbf) · [CVI](#kw-cvi) · [CVL](#kw-cvl) · [CVS](#kw-cvs) · [CVSMBF](#kw-cvsmbf)
 
 **D** — [DATA](#kw-data) · [DATE\$](#kw-date-s) · [DECLARE](#kw-declare) · DEF → [DEF FN](#kw-def-fn) · [DEF FN](#kw-def-fn) · [DEF SEG](#kw-def-seg) · DEFDBL → [DEFINT](#kw-defint) · [DEFINT](#kw-defint) · DEFLNG → [DEFINT](#kw-defint) · DEFSNG → [DEFINT](#kw-defint) · DEFSTR → [DEFINT](#kw-defint) · [DIM](#kw-dim) · [DO](#kw-do) · DOUBLE → [DIM](#kw-dim) · [DRAW](#kw-draw)
 
-**E** — ELSE → [IF](#kw-if) · ELSEIF → [IF](#kw-if) · [END](#kw-end) · [ENVIRON](#kw-environ) · ENVIRON\$ → [ENVIRON](#kw-environ) · [EOF](#kw-eof) · EQV → [Operators](#topic-operators) · [ERASE](#kw-erase) · [ERDEV](#kw-erdev) · ERDEV\$ → [ERDEV](#kw-erdev) · ERL → [ERR](#kw-err) · [ERR](#kw-err) · [ERROR](#kw-error) · [EXIT](#kw-exit) · [EXP](#kw-exp)
+**E** — ELSE → [IF](#kw-if) · ELSEIF → [IF](#kw-if) · [END](#kw-end) · [ENVIRON](#kw-environ) · ENVIRON\$ → [ENVIRON](#kw-environ) · [EOF](#kw-eof) · EQV → [Operators](#topic-operators) · [ERASE](#kw-erase) · [ERDEV](#kw-erdev) · ERDEV\$ → [ERDEV](#kw-erdev) · ERL → [ERR](#kw-err) · [ERR](#kw-err) · [ERROR](#kw-error) · EXE → [Make EXE](#topic-make-exe) · [EXIT](#kw-exit) · [EXP](#kw-exp)
 
 **F** — [FIELD](#kw-field) · [FILEATTR](#kw-fileattr) · [FILES](#kw-files) · [FILL](#kw-fill) · [FIX](#kw-fix) · [FOR](#kw-for) · [FRE](#kw-fre) · [FREEFILE](#kw-freefile) · [FUNCTION](#kw-function)
 
@@ -64,7 +65,7 @@ Programs written for QBasic 1.1 run unchanged. The differences are:
 
 **L** — [LBOUND](#kw-lbound) · [LCASE\$](#kw-lcase-s) · [LEFT\$](#kw-left-s) · [LEN](#kw-len) · [LET](#kw-let) · [LINE](#kw-line) · [LINE INPUT](#kw-line-input) · LIST → [KEY](#kw-key) · [LOADBMP](#kw-loadbmp) · [LOADGIF](#kw-loadgif) · [LOADPAL](#kw-loadpal) · [LOC](#kw-loc) · [LOCATE](#kw-locate) · [LOCK](#kw-lock) · [LOF](#kw-lof) · [LOG](#kw-log) · LONG → [DIM](#kw-dim) · LOOP → [DO](#kw-do) · LPOS → [LPRINT](#kw-lprint) · [LPRINT](#kw-lprint) · [LSET](#kw-lset) · [LTRIM\$](#kw-ltrim-s)
 
-**M** — [MID\$](#kw-mid-s) · MKD\$ → [MKI\$](#kw-mki-s) · [MKDIR](#kw-mkdir) · MKDMBF\$ → [CVSMBF](#kw-cvsmbf) · [MKI\$](#kw-mki-s) · MKL\$ → [MKI\$](#kw-mki-s) · MKS\$ → [MKI\$](#kw-mki-s) · MKSMBF\$ → [CVSMBF](#kw-cvsmbf) · [MOD](#kw-mod) · [MOUSE](#kw-mouse) · [MULTIKEY](#kw-multikey) · [MUSIC](#kw-music)
+**M** — MAKE → [Make EXE](#topic-make-exe) · [MID\$](#kw-mid-s) · MKD\$ → [MKI\$](#kw-mki-s) · [MKDIR](#kw-mkdir) · MKDMBF\$ → [CVSMBF](#kw-cvsmbf) · [MKI\$](#kw-mki-s) · MKL\$ → [MKI\$](#kw-mki-s) · MKS\$ → [MKI\$](#kw-mki-s) · MKSMBF\$ → [CVSMBF](#kw-cvsmbf) · [MOD](#kw-mod) · [MOUSE](#kw-mouse) · [MULTIKEY](#kw-multikey) · [MUSIC](#kw-music)
 
 **N** — [NAME](#kw-name) · NEXT → [FOR](#kw-for) · NOT → [Operators](#topic-operators)
 
@@ -504,6 +505,24 @@ ON COM(n%) GOSUB line
 Serial port event trapping. Accepted so old programs run, but QBLike has no serial ports: the event never fires.
 
 See also: [ON TIMER](#kw-on-timer)
+
+<a id="kw-command-s"></a>
+
+### COMMAND$
+
+```
+COMMAND$
+```
+
+Returns the command line used to invoke the program: everything typed after the program name, without leading blanks, in upper case (like QuickBASIC). In programs made with File \> Make EXE it holds the arguments of the executable; with qblike /X PROG.BAS the words after the file name. Run from the editor, it is "".
+
+COMMAND\$ comes from QuickBASIC (QBasic 1.1 doesn't have it); a program that uses its own variable COMMAND\$ keeps it.
+
+```
+IF COMMAND$ = "/EASY" THEN lives% = 5
+```
+
+See also: [MAKE EXE](#topic-make-exe)
 
 <a id="kw-common"></a>
 
@@ -2998,6 +3017,30 @@ When a program is stopped, the editor shows the statement where it stopped. F5 c
 While stopped you can inspect variables in the Immediate window (F6), e.g. PRINT x, and use Debug \> Set Next Statement.
 
 See also: [Editing Keys](#topic-editing-keys), [STOP](#kw-stop)
+
+<a id="topic-make-exe"></a>
+
+### Making Executables
+
+File \> Make EXE File creates a stand-alone program: a copy of the QBLike run-time module (qbrun, like BRUN45.EXE of QuickBASIC) with your program inside. It runs on computers without QBLike, starting in a window or full screen as chosen, and closes when the program ends.
+
+- The program is saved and checked first; it is stored obfuscated.
+- Data files it uses (images, sounds, music...) are not included: copy
+  them next to the executable.
+- qbrun (qbrun.exe on Windows) must be next to QBLike. With the runtime
+  of the other system (bin/windows or bin/linux) an executable for it
+  can be made too. On Linux the executable needs SDL2, like QBLike.
+- qbrun alone does nothing.
+- The arguments of the executable are in [COMMAND\$](#kw-command-s). -w or --window
+  and --fullscreen choose the start mode at run time.
+
+```
+From the command line:
+  qblike --make-exe GAME.BAS [GAME.EXE] [--fullscreen]
+                            [--target windows|linux]
+```
+
+See also: [SCREEN](#kw-screen), [Menus](#topic-menus)
 
 <a id="topic-menus"></a>
 

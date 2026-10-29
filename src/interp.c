@@ -955,6 +955,14 @@ static void builtin_str(Expr *e, char **p, int *len) {
         }
         case F_ERDEV: ret_str(p, len, "", 0); return;
         case F_IOCTL: ret_str(p, len, "", 0); return;
+        case F_COMMAND: {
+            /* QuickBASIC returns the command line in upper case */
+            int n = (int)strlen(g_command);
+            char *c = (char *)qb_alloc((size_t)n + 1);
+            for (int i = 0; i < n; i++) c[i] = (char)toupper((unsigned char)g_command[i]);
+            *p = c; *len = n;
+            return;
+        }
         case F_SPC: case F_TAB: ret_str(p, len, "", 0); return;
     }
     rt_error(5);

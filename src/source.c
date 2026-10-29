@@ -157,12 +157,28 @@ void doc_from_lines(Doc *d, char **lines, int n) {
 int doc_load(Doc *d, const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz < 0) { fclose(f); return 0; }
+    char *data = (char *)qb_alloc((size_t)sz + 1);
+    long got = (long)fread(data, 1, (size_t)sz, f);
+    fclose(f);
+    int r = doc_load_mem(d, data, (int)got);
+    free(data);
+    return r;
+}
+
+/* load a program from memory (the text of a .BAS file) */
+int doc_load_mem(Doc *d, const char *data, int size) {
+    int pos = 0;
     char **lines = NULL;
     int n = 0, cap = 0;
     char buf[4096];
     int bl = 0;
     int c;
-    while ((c = fgetc(f)) != EOF) {
+    while (pos < size) {
+        c = (unsigned char)data[pos++];
         if (c == '\n' || bl >= 4000) {
             buf[bl] = 0;
             strip_eol(buf);
@@ -188,7 +204,6 @@ int doc_load(Doc *d, const char *path) {
         if (n >= cap) { cap = cap ? cap * 2 : 256; lines = (char **)qb_realloc(lines, sizeof(char *) * (size_t)cap); }
         lines[n++] = qb_strdup(buf);
     }
-    fclose(f);
     /* UTF-8 files (written with modern editors) are converted to CP437 */
     int high = 0, valid = 1;
     for (int i = 0; i < n && valid; i++) {

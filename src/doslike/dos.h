@@ -268,7 +268,8 @@ int mouserely( void );
 
 bool app_has_focus( app_t* app );
 
-#include "libs/awe32rom.h"
+/* QBLike: the built-in AWE32 General MIDI SoundFont (libs/awe32rom.h, 1 MB) is left out: MIDI music
+   is played on the OPL. */
 #include "libs/crtframe.h"
 #include "libs/thread.h"
 #ifdef __wasm__
@@ -1730,7 +1731,8 @@ int mouserely( void ) {
 
 
 void setsoundbank( int soundbank ) {
-    if( soundbank >= 1 && soundbank < internals->audio.soundbanks_count ) {
+    if( soundbank >= 1 && soundbank < internals->audio.soundbanks_count &&
+        !( internals->audio.soundbanks[ soundbank ].type == SOUNDBANK_TYPE_SF2 && !internals->audio.soundbanks[ soundbank ].sf2 ) ) {
         internals->audio.current_soundbank = soundbank;
     }
 }
@@ -1785,12 +1787,7 @@ int installusersoundbank( char const* filename ) {
 static void load_default_sf2( void ) {
     // Delay loading of built-in soundfont until first used
     // This also allows the linker to not include the entire large sf2 file if this function is not used
-    if (!internals->audio.soundbanks[ DEFAULT_SOUNDBANK_AWE32 ].sf2) {
-        internals->audio.soundbanks[ DEFAULT_SOUNDBANK_AWE32 ].sf2 = tsf_load_memory( awe32rom, sizeof( awe32rom ) );
-        if (internals->audio.current_soundbank == DEFAULT_SOUNDBANK_NONE) {
-            setsoundbank(DEFAULT_SOUNDBANK_AWE32);
-        }
-    }
+    /* QBLike: no built-in SoundFont (see the includes); the OPL is used instead */
 }
 
 
@@ -3161,6 +3158,7 @@ static int qbl_win_to_bmp( qbl_map_t const* m, int wx, int wy, int* bx, int* by 
 /* QBLike: SCREEN FULL / SCREEN WINDOW from the program thread, applied by the app loop */
 static volatile int qbl_fs_request = -1;   /* -1 nothing, 0 window, 1 fullscreen */
 static volatile int qbl_fs_state = 0;
+static int qbl_start_fullscreen = -1;   /* set by qbl_prestart: -1 default, 0 window, 1 fullscreen */
 void dos_setfullscreen( int on ) { qbl_fs_request = on ? 1 : 0; }
 int dos_isfullscreen( void ) { return qbl_fs_state; }
 
@@ -3192,6 +3190,7 @@ static int app_proc( app_t* app, void* user_data ) {
     }
     app_context->argc = modargc;
     app_context->argv = modargv;
+    if( qbl_start_fullscreen >= 0 ) fullscreen = qbl_start_fullscreen != 0;
 
     int pointer_width = 0;
     int pointer_height = 0;
@@ -3955,6 +3954,12 @@ int main( int argc, char** argv ) {
     //bin2arr( "framealpha.gif", "crtframealpha.h", "crtframealpha" );
     //bin2arr( "aweromgm.sf2", "awe32rom.h", "awe32rom" );
 
+    /* QBLike: the program decides before the window opens whether to start at all (the
+       stand-alone runtime does nothing without an appended program) and in which mode */
+    extern int qbl_prestart( int argc, char** argv, int* fullscreen );
+    int fs = -1;
+    if( !qbl_prestart( argc, argv, &fs ) ) return 0;
+    qbl_start_fullscreen = fs;
     struct app_context_t app_context;
     app_context.argc = argc;
     app_context.argv = argv;

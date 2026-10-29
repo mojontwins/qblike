@@ -26,6 +26,7 @@ void part_set(Part *p, int at, const char *text);
 void doc_init(Doc *d);
 void doc_free(Doc *d);
 int  doc_load(Doc *d, const char *path);
+int  doc_load_mem(Doc *d, const char *data, int size);
 int  doc_save(Doc *d, const char *path);
 void doc_from_lines(Doc *d, char **lines, int n);
 int  classify_line(const char *line, char *name, int namesz);

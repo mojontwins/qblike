@@ -34,6 +34,9 @@ qblike program.bas        opens a program in the IDE
 qblike /RUN program.bas   opens and runs it
 qblike /X program.bas     runs it without the IDE (like a normal executable)
 qblike -w ...             starts in a window (Alt+Enter or F11 toggle fullscreen)
+qblike /X program.bas a b the words after the file name are the program's COMMAND$
+qblike --make-exe program.bas [output] [--fullscreen] [--target windows|linux]
+                          makes a stand-alone executable (see below)
 ```
 
 Files can be in CP437 (like MS-DOS files) or UTF-8 (modern editors). The encoding is detected when
@@ -145,6 +148,29 @@ The AdLib / Sound Blaster FM chip is emulated on its ports (`OUT &H388`/`&H389`,
 working timers), so FM music players written for QuickBASIC, such as Bisqwit's S3M player, run unchanged.
 The `examples` folder includes `NAVES.BAS`, a complete game that uses all of this.
 
+### Making executables
+
+*File > Make EXE File* turns the program into a stand-alone executable that runs without QBLike.
+It is a copy of **qbrun** (`qbrun.exe` on Windows), the QBLike run-time module, with the program
+inside, like BRUN45.EXE of QuickBASIC. qbrun has the interpreter but not the editor, and by itself
+it does nothing.
+
+- You choose whether the executable starts in a **window** or **full screen**. The user can still
+  pass `-w` / `--window` or `--fullscreen` to it.
+- The program is saved and checked first, and it is stored obfuscated, not as readable text.
+- When the program ends the executable closes. A run-time error is shown and waits for a key.
+- Its command-line arguments are available in `COMMAND$`.
+- Data files the program uses (images, sounds, music, data) are not included: copy them next to
+  the executable.
+- qbrun must be next to QBLike; without it the option explains what is missing, and the dialog only
+  offers the systems whose runtime it finds. With the runtime of the other system (the package has
+  `bin/windows` and `bin/linux`) you can make an executable for it too, by choosing *For: Windows /
+  Linux* in the dialog or with `--target`. On Linux the executable needs SDL2, like QBLike.
+
+```
+qblike --make-exe GAME.BAS GAME.EXE --fullscreen --target windows
+```
+
 ### Options
 
 In **Options**: colors, scroll bars, tab size (4 by default), syntax highlighting, 50-line screen, CRT
@@ -174,6 +200,7 @@ If the window is closed with unsaved changes, a `NAME.RECOVER.BAS` copy is creat
 ### Building
 
 - **Windows**: `build_windows.bat` (Visual Studio, MinGW or the TCC included with dos-like).
+  Each script builds `qblike` and the run-time module `qbrun`.
 - **Linux**: `sudo apt-get install libsdl2-dev libglew-dev`, then `./build_linux.sh`.
 - **macOS**: `brew install sdl2 glew`, then `./build_macos.sh` (untested).
 
@@ -188,7 +215,8 @@ No build system is needed: it compiles with a single compiler command.
 | `src/interp.c` | interpreter and built-in functions |
 | `src/using.c` | `PRINT USING` |
 | `src/screen.c` | screen modes, graphics, keyboard, VGA port emulation |
-| `src/sound.c` | `BEEP`, `SOUND`, `PLAY` |
+| `src/sound.c` | `BEEP`, `SOUND`, `PLAY`, `MUSIC`, `SOUND PLAY` |
+| `src/exepack.c`, `src/runtime.c` | File > Make EXE: the program appended to a copy of qbrun, and qbrun's entry point |
 | `src/files.c` | files |
 | `src/source.c` | loading and saving programs (module + SUBs) |
 | `src/ide.c` | editor, menus, dialogs, debugger |
@@ -202,7 +230,7 @@ No build system is needed: it compiles with a single compiler command.
 Changes to dos-like: `setcrtmode()` to turn the CRT effect on or off at run time, Alt+Enter for
 fullscreen, mouse position also without CRT and outside the window, pointer kept inside the picture in fullscreen, on Windows preventing Alt/F10 from
 activating the window's system menu (which blocked the keyboard), handling `SIGTERM`/Ctrl+C on Linux
-(`SDL_QUIT`), a 64 MB stack for the program thread (deep SUB/FUNCTION recursion), and a timestamped OPL write queue (`dos_opl_write`) mixed with the rest of the audio, OPL output resampled from the chip rate (49716 Hz) to 44100 Hz and MIDI on the OPL tuned one octave down (both played too high), and MOD music that can end instead of always looping. It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
+(`SDL_QUIT`), a 64 MB stack for the program thread (deep SUB/FUNCTION recursion), and a timestamped OPL write queue (`dos_opl_write`) mixed with the rest of the audio, OPL output resampled from the chip rate (49716 Hz) to 44100 Hz and MIDI on the OPL tuned one octave down (both played too high), MOD music that can end instead of always looping, and without the built-in AWE32 SoundFont (1 MB that QBLike doesn't use: MIDI is played on the OPL). It is compiled with `DISABLE_SCREEN_FRAME` (no monitor frame) and `DISABLE_SYSTEM_CURSOR`
 (QBLike draws its own mouse cursor, like the DOS driver: an arrow in graphics modes, an inverted block in
 text mode).
 
@@ -274,6 +302,9 @@ qblike programa.bas       abre un programa en el IDE
 qblike /RUN programa.bas  lo abre y lo ejecuta
 qblike /X programa.bas    lo ejecuta sin IDE (como un ejecutable normal)
 qblike -w ...             arranca en ventana (Alt+Intro o F11 alternan pantalla completa)
+qblike /X programa.bas a b las palabras tras el nombre del archivo son el COMMAND$ del programa
+qblike --make-exe programa.bas [salida] [--fullscreen] [--target windows|linux]
+                          crea un ejecutable independiente (ver más abajo)
 ```
 
 Los archivos pueden estar en CP437 (como los de MS-DOS) o en UTF-8 (editores modernos). La codificación se
@@ -386,6 +417,30 @@ temporizadores), así que los reproductores de música FM escritos para QuickBAS
 S3M de Bisqwit, funcionan sin cambios.
 La carpeta `examples` incluye `NAVES.BAS`, un juego completo que usa todo esto.
 
+### Crear ejecutables
+
+*File > Make EXE File* convierte el programa en un ejecutable independiente que funciona sin QBLike.
+Es una copia de **qbrun** (`qbrun.exe` en Windows), el módulo de ejecución de QBLike, con el programa
+dentro, como el BRUN45.EXE de QuickBASIC. qbrun tiene el intérprete pero no el editor, y por sí solo
+no hace nada.
+
+- Se elige si el ejecutable arranca **en ventana** o **a pantalla completa**. El usuario aún puede
+  pasarle `-w` / `--window` o `--fullscreen`.
+- El programa se guarda y se comprueba antes, y se almacena ofuscado, no como texto legible.
+- Cuando el programa termina, el ejecutable se cierra. Un error en tiempo de ejecución se muestra y
+  espera una tecla.
+- Sus argumentos de la línea de órdenes están en `COMMAND$`.
+- Los archivos de datos que use el programa (imágenes, sonidos, música, datos) no se incluyen: hay
+  que copiarlos junto al ejecutable.
+- qbrun debe estar junto a QBLike; si no está, la opción explica lo que falta, y el diálogo solo
+  ofrece los sistemas cuyo runtime encuentra. Con el runtime del otro sistema (el paquete trae `bin/windows` y
+  `bin/linux`) también se puede crear un ejecutable para él, eligiendo *For: Windows / Linux* en el
+  diálogo o con `--target`. En Linux el ejecutable necesita SDL2, como QBLike.
+
+```
+qblike --make-exe JUEGO.BAS JUEGO.EXE --fullscreen --target windows
+```
+
 ### Opciones
 
 En **Options**: colores, barras de desplazamiento, tamaño del tabulador (4 por defecto), resaltado de sintaxis,
@@ -416,6 +471,7 @@ Si se cierra la ventana con cambios sin guardar, se crea una copia `NOMBRE.RECOV
 ### Compilar
 
 - **Windows**: `build_windows.bat` (Visual Studio, MinGW o el TCC incluido con dos-like).
+  Cada script compila `qblike` y el módulo de ejecución `qbrun`.
 - **Linux**: `sudo apt-get install libsdl2-dev libglew-dev` y después `./build_linux.sh`.
 - **macOS**: `brew install sdl2 glew` y después `./build_macos.sh` (sin probar).
 
@@ -430,7 +486,8 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 | `src/interp.c` | intérprete y funciones integradas |
 | `src/using.c` | `PRINT USING` |
 | `src/screen.c` | modos de pantalla, gráficos, teclado, emulación de puertos VGA |
-| `src/sound.c` | `BEEP`, `SOUND`, `PLAY` |
+| `src/sound.c` | `BEEP`, `SOUND`, `PLAY`, `MUSIC`, `SOUND PLAY` |
+| `src/exepack.c`, `src/runtime.c` | File > Make EXE: el programa añadido a una copia de qbrun, y el punto de entrada de qbrun |
 | `src/files.c` | archivos |
 | `src/source.c` | carga y guardado de programas (módulo + SUBs) |
 | `src/ide.c` | editor, menús, diálogos, depurador |
@@ -443,7 +500,7 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 
 Cambios en dos-like: `setcrtmode()` para activar o desactivar el efecto CRT en tiempo de ejecución,
 Alt+Intro para pantalla completa, posición del ratón también sin CRT y fuera de la ventana, puntero confinado a la imagen en pantalla completa, en Windows impedir que Alt/F10 activen el menú de sistema de la ventana
-(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION) y una cola de escrituras al OPL con marca de tiempo (`dos_opl_write`) que se mezcla con el resto del audio, la salida del OPL remuestreada de la frecuencia del chip (49716 Hz) a 44100 Hz y el MIDI por OPL bajado una octava (ambos sonaban más agudos), y música MOD que puede terminar en vez de repetirse siempre. Se compila con `DISABLE_SCREEN_FRAME`
+(que bloqueaba el teclado), atender el cierre por `SIGTERM`/Ctrl+C en Linux (`SDL_QUIT`) una pila de 64 MB para el hilo del programa (recursión profunda de SUB/FUNCTION) y una cola de escrituras al OPL con marca de tiempo (`dos_opl_write`) que se mezcla con el resto del audio, la salida del OPL remuestreada de la frecuencia del chip (49716 Hz) a 44100 Hz y el MIDI por OPL bajado una octava (ambos sonaban más agudos), música MOD que puede terminar en vez de repetirse siempre, y sin el SoundFont AWE32 integrado (1 MB que QBLike no usa: el MIDI se toca con el OPL). Se compila con `DISABLE_SCREEN_FRAME`
 (sin el marco del monitor) y `DISABLE_SYSTEM_CURSOR` (QBLike dibuja su propio cursor de ratón, como el
 controlador de DOS: flecha en modos gráficos, bloque invertido en modo texto).
 

@@ -1,5 +1,6 @@
 /* ide.c - QBasic-style integrated development environment */
 #include "qb.h"
+#include "exepack.h"
 #include "source.h"
 #include "doslike/dos.h"
 #include <stdio.h>
@@ -895,7 +896,7 @@ static void bp_toggle(int part, int line) {
 /* commands and menus                                                 */
 /* ------------------------------------------------------------------ */
 enum {
-    CMD_NONE, CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_SAVEAS, CMD_PRINT, CMD_EXIT,
+    CMD_NONE, CMD_NEW, CMD_OPEN, CMD_SAVE, CMD_SAVEAS, CMD_MAKEEXE, CMD_PRINT, CMD_EXIT,
     CMD_UNDO, CMD_CUT, CMD_COPY, CMD_PASTE, CMD_CLEAR, CMD_NEWSUB, CMD_NEWFUNC, CMD_FORMAT,
     CMD_SUBS, CMD_SPLIT, CMD_OUTPUT,
     CMD_FIND, CMD_REPEAT, CMD_CHANGE,
@@ -909,11 +910,13 @@ typedef struct MItem { const char *label; const char *key; int cmd; const char *
 typedef struct Menu { const char *title; int x; int n; MItem items[12]; } Menu;
 
 static Menu menus[] = {
-    { "&File", 2, 7, {
+    { "&File", 2, 9, {
         { "&New", "", CMD_NEW, "Removes currently loaded file from memory" },
         { "&Open...", "", CMD_OPEN, "Loads new file into memory" },
         { "&Save", "", CMD_SAVE, "Writes current file to disk" },
         { "Save &As...", "", CMD_SAVEAS, "Saves current file with specified name" },
+        { "-", "", 0, "" },
+        { "&Make EXE File...", "", CMD_MAKEEXE, "Creates a stand-alone executable of the program" },
         { "-", "", 0, "" },
         { "&Print...", "", CMD_PRINT, "Prints specified text" },
         { "E&xit", "", CMD_EXIT, "Exits " QB_NAME " and returns to the operating system" } } },
@@ -2787,6 +2790,82 @@ static void speed_dialog(void) {
     save_config();
 }
 
+/* File > Make EXE File: the program (saved first) appended to a copy of the runtime (qbrun) */
+static void make_exe_dialog(void) {
+    extern int make_exe(const char *in, const char *out, int flags, int target, char *err, int errsz);
+    commit_line();
+    int host0 = exepack_host_target();
+    int other = host0 == EXE_TARGET_MACOS ? EXE_TARGET_MACOS : EXE_TARGET_LINUX;
+    char rtp[1024];
+    int have_w = exepack_find_runtime(EXE_TARGET_WINDOWS, rtp, sizeof rtp);
+    int have_l = exepack_find_runtime(other, rtp, sizeof rtp);
+    if (!have_w && !have_l) {
+        show_message(host0 == EXE_TARGET_WINDOWS
+            ? "Make EXE File needs the run-time module qbrun.exe,\nwhich must be in the same folder as QBLike."
+            : "Make EXE File needs the run-time module qbrun,\nwhich must be in the same folder as QBLike.", 0);
+        return;
+    }
+    if (modified || !filename[0]) {
+        const char *b[] = { "&Save", "Cancel" };
+        if (message_box("Make EXE File", "The program must be saved first.", b, 2, 0) != 0) return;
+        if (!do_save()) return;
+    }
+    static int last_full = 0;
+    int host = exepack_host_target();
+    char def[600];
+    snprintf(def, sizeof def, "%s", filename);
+    char *dot = strrchr(def, '.');
+    char *sl = strrchr(def, '/'), *bs = strrchr(def, '\\');
+    if (dot && (!sl || dot > sl) && (!bs || dot > bs)) *dot = 0;
+    int deft = (host == EXE_TARGET_WINDOWS && have_w) || !have_l ? EXE_TARGET_WINDOWS : other;
+    if (deft == EXE_TARGET_WINDOWS) strcat(def, ".EXE");
+    Dlg d;
+    memset(&d, 0, sizeof d);
+    d.title = "Make EXE File";
+    dlg_center(&d, 60, 15);
+    dlg_add(&d, CT_LABEL, 2, 2, 0, 0, "&EXE file name:", 0);
+    Ctl *f = dlg_add(&d, CT_FIELD, 18, 2, 38, 1, NULL, 1);
+    field_set(f, def);
+    dlg_add(&d, CT_LABEL, 2, 4, 0, 0, "Start in:", 0);
+    Ctl *rw = dlg_add(&d, CT_RADIO, 4, 5, 0, 0, "&Window", 2);
+    Ctl *rf = dlg_add(&d, CT_RADIO, 4, 6, 0, 0, "&Full screen", 3);
+    rw->group = rf->group = 1;
+    rw->checked = !last_full; rf->checked = last_full;
+    /* only the systems whose run-time module was found */
+    dlg_add(&d, CT_LABEL, 30, 4, 0, 0, "For:", 0);
+    Ctl *tw = NULL, *tl = NULL;
+    int ty = 5;
+    if (have_w) { tw = dlg_add(&d, CT_RADIO, 32, ty++, 0, 0, "Wi&ndows", 4); tw->group = 2; tw->checked = deft == EXE_TARGET_WINDOWS; }
+    if (have_l) { tl = dlg_add(&d, CT_RADIO, 32, ty++, 0, 0, other == EXE_TARGET_MACOS ? "&macOS" : "&Linux", 5); tl->group = 2; tl->checked = deft != EXE_TARGET_WINDOWS; }
+    dlg_add(&d, CT_LABEL, 2, 8, 0, 0, "Data files the program uses (images, sounds...) must", 0);
+    dlg_add(&d, CT_LABEL, 2, 9, 0, 0, "be copied next to the executable.", 0);
+    dlg_add(&d, CT_SEP, 0, 11, 0, 0, NULL, 0);
+    dlg_add(&d, CT_BUTTON, 14, 12, 0, 0, "Make EXE", 10);
+    dlg_add(&d, CT_BUTTON, 34, 12, 0, 0, "Cancel", 11);
+    d.defbutton = 10; d.cancel = 11;
+    d.focus = 1;
+    if (run_dialog(&d) != 10) return;
+    last_full = rf->checked;
+    char out[600];
+    snprintf(out, sizeof out, "%s", f->text);
+    char *t = out; while (*t == ' ') t++;
+    if (!*t) return;
+    int target = (tw && tw->checked) ? EXE_TARGET_WINDOWS : other;
+    {   /* the usual name for the chosen system: GAME.EXE on Windows, GAME elsewhere */
+        char *base = t;
+        for (char *c = t; *c; c++) if (*c == '/' || *c == '\\') base = c + 1;
+        char *ext = strrchr(base, '.');
+        if (target == EXE_TARGET_WINDOWS && !ext) strcat(t, ".EXE");
+        else if (target != EXE_TARGET_WINDOWS && ext && str_ieq(ext, ".exe")) *ext = 0;
+    }
+    char err[1100];
+    if (make_exe(filename, t, rf->checked ? EXE_FULLSCREEN : 0, target, err, sizeof err)) {
+        char msg[700];
+        snprintf(msg, sizeof msg, "Created %s", t);
+        show_message(msg, 0);
+    } else show_message(err, 0);
+}
+
 static void about_box(void) {
     const char *b[] = { "OK" };
     message_box("About", QB_NAME " Version " QB_VERSION "\n\nA QBasic-compatible interpreter and IDE.\nThis port uses dos-like by M. Gustavsson.\n\nClean-room implementation: not affiliated with Microsoft.", b, 1, 0);
@@ -3167,6 +3246,7 @@ static void exec_command(int cmd, int nested, int *ret) {
         case CMD_OPEN: if (nested) { pending_action = PA_OPEN; *ret = DBG_ABORT; } else cmd_open(); break;
         case CMD_SAVE: do_save(); break;
         case CMD_SAVEAS: save_as_dialog(); break;
+        case CMD_MAKEEXE: make_exe_dialog(); break;
         case CMD_PRINT: break;
         case CMD_EXIT: if (nested) { pending_action = PA_EXIT; *ret = DBG_ABORT; } else if (confirm_discard()) quit_requested = 1; break;
         case CMD_UNDO: do_undo(); break;

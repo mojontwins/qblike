@@ -25,6 +25,7 @@ static const HelpEnt H[] = {
 { "CLEAR", "CLEAR [,,stack&]", "Closes all files, erases all arrays and resets every module-level\nvariable to zero or \"\". The stack size argument of QBasic is accepted\nand ignored (QBLike's stack is not limited this way).", "ERASE" },
 { "CLIP", "CLIP x1%, y1%, x2%, y2%\nCLIP", "QBLike extension. Sets the clipping rectangle used by PUT (and by\nLOADBMP/LOADGIF ..., SCREEN), in absolute screen coordinates: the origin\nis not moved, unlike VIEW. CLIP alone, or SCREEN with a mode, resets it to\nthe whole screen.\n\nPUT never fails for being off-screen: only the part of the image inside\nthe rectangle is drawn, so sprites can leave the screen on any side.\n\n  CLIP 0, 20, 319, 199     ' keep the top 20 lines (score bar) intact\n  PUT (x%, y%), sprite%(0), MASK", "PUT VIEW" },
 { "COM", "COM(n%) ON | OFF | STOP\nON COM(n%) GOSUB line", "Serial port event trapping. Accepted so old programs run, but QBLike has\nno serial ports: the event never fires.", "ON TIMER" },
+{ "COMMAND$", "COMMAND$", "Returns the command line used to invoke the program: everything typed\nafter the program name, without leading blanks, in upper case (like\nQuickBASIC). In programs made with File > Make EXE it holds the\narguments of the executable; with qblike /X PROG.BAS the words after\nthe file name. Run from the editor, it is \"\".\n\nCOMMAND$ comes from QuickBASIC (QBasic 1.1 doesn't have it); a program\nthat uses its own variable COMMAND$ keeps it.\n\n  IF COMMAND$ = \"/EASY\" THEN lives% = 5", "MAKE EXE" },
 { "CVSMBF", "CVSMBF(4-byte-string$)\nCVDMBF(8-byte-string$)\nMKSMBF$(single-expression!)\nMKDMBF$(double-expression#)", "Convert between numbers and strings in Microsoft Binary Format, the\nfloating point format of GW-BASIC and early QuickBASIC data files.\nCVSMBF/CVDMBF read such a string; MKSMBF$/MKDMBF$ write one.", "CVI MKI$" },
 { "ENVIRON", "ENVIRON$(name$)\nENVIRON$(n%)\nENVIRON \"name=value\"", "ENVIRON$(name$) returns the value of an environment variable (\"\" if it\ndoes not exist); ENVIRON$(n%) returns the n-th entry as \"NAME=value\".\nThe ENVIRON statement sets a variable for this program and the programs\nit starts with SHELL.", "SHELL" },
 { "ERDEV", "ERDEV\nERDEV$", "Return the code and name of the device that caused the last critical\nerror in DOS. In QBLike they always return 0 and \"\".", "ERR" },
@@ -197,7 +198,7 @@ static const char *aliases[][2] = {
     { "EQV", "Operators" }, { "IMP", "Operators" }, { "SEG", "DEF SEG" }, { "PRESERVE", "REDIM" }, { "?", "PRINT" },
     { "ACCESS", "OPEN" }, { "APPEND", "OPEN" }, { "BINARY", "OPEN" }, { "OUTPUT", "OPEN" }, { "RANDOM", "OPEN" },
     { "ANY", "DECLARE" }, { "OFF", "ON TIMER" }, { "LIST", "KEY" }, { "UNLOCK", "LOCK" }, { "RSET", "LSET" },
-    { "STRIG", "STICK" }, { "CVDMBF", "CVSMBF" }, { "MKSMBF$", "CVSMBF" }, { "MKDMBF$", "CVSMBF" },
+    { "STRIG", "STICK" }, { "MAKE", "Make EXE" }, { "EXE", "Make EXE" }, { "CVDMBF", "CVSMBF" }, { "MKSMBF$", "CVSMBF" }, { "MKDMBF$", "CVSMBF" },
     { "ENVIRON$", "ENVIRON" }, { "ERDEV$", "ERDEV" }, { "IOCTL$", "IOCTL" }, { "LPOS", "LPRINT" },
     { NULL, NULL }
 };
@@ -319,6 +320,25 @@ static const char *extra_topics[][2] = {
       "  * Sound effects: id = <<SOUND>> \"BOOM.WAV\": SOUND PLAY id\n"
       "  * AdLib FM ports: OUT &H388, reg: OUT &H389, value   (see <<OUT>>)\n\n"
       "  See also: <<INP>> <<OUT>> <<DEF SEG>> <<GET>>\n" },
+    { "Make EXE",
+      "  Making Executables\n\n"
+      "  File > Make EXE File creates a stand-alone program: a copy of the\n"
+      "  QBLike run-time module (qbrun, like BRUN45.EXE of QuickBASIC) with your\n"
+      "  program inside. It runs on computers without QBLike, starting in a\n"
+      "  window or full screen as chosen, and closes when the program ends.\n\n"
+      "  * The program is saved and checked first; it is stored obfuscated.\n"
+      "  * Data files it uses (images, sounds, music...) are not included: copy\n"
+      "    them next to the executable.\n"
+      "  * qbrun (qbrun.exe on Windows) must be next to QBLike. With the runtime\n"
+      "    of the other system (bin/windows or bin/linux) an executable for it\n"
+      "    can be made too. On Linux the executable needs SDL2, like QBLike.\n"
+      "  * qbrun alone does nothing.\n"
+      "  * The arguments of the executable are in <<COMMAND$>>. -w or --window\n"
+      "    and --fullscreen choose the start mode at run time.\n\n"
+      "  From the command line:\n"
+      "    qblike --make-exe GAME.BAS [GAME.EXE] [--fullscreen]\n"
+      "                              [--target windows|linux]\n\n"
+      "  See also: <<SCREEN>> <<Menus>>\n" },
     { "Menus",
       "  Menus\n\n"
       "  Press Alt to activate the menu bar, then use the arrows and Enter, or\n"
