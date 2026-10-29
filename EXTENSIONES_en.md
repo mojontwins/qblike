@@ -632,7 +632,7 @@ with every `SCREEN`.
 
 ### Arrays in memory (VARSEG / VARPTR)
 
-QBLike gives every numeric array an address in the emulated conventional memory the first time `VARSEG`
+QBLike gives every array of numbers, `STRING * n` or `TYPE` records an address in the emulated conventional memory the first time `VARSEG`
 or `VARPTR` is used on one of its elements. From then on `PEEK`, `POKE`, `BLOAD`, `BSAVE` and
 `GET`/`PUT ... SEG` see the bytes of the array at that address, exactly like in QBasic:
 
@@ -650,6 +650,8 @@ DEF SEG
   (offsets over 32767 are negative); `PEEK`/`POKE` accept them either way.
 - An address that doesn't belong to any array (outside the video, BIOS and array areas) raises
   *Illegal function call* in `PUT ... SEG`/`GET ... SEG`; `PEEK` returns 0 and `POKE` does nothing there.
+- Records are laid out field after field, as in QBasic, so `BLOAD` loads a map of `TYPE` records saved
+  by a QuickBASIC program.
 - `REDIM` and `ERASE` of a dynamic array free its address; strings and simple variables have no address
   (`VARSEG`/`VARPTR` return 0).
 
@@ -829,11 +831,12 @@ A modern PC has no segments, so QBLike emulates the two useful cases:
 
 **1. Arrays** (sprites, maps, tables…). If the offset is written as `VARPTR(array(index))`, the data is
 saved from the array or loaded into it as is, byte by byte, starting at that element, regardless of
-`DEF SEG` or the segment stored in the file. It works with any numeric array (INTEGER, LONG, SINGLE,
-DOUBLE, with one or more dimensions); string arrays and `TYPE` arrays raise *Type mismatch*.
+`DEF SEG` or the segment stored in the file. It works with arrays of numbers (INTEGER, LONG, SINGLE,
+DOUBLE), of `STRING * n` and of `TYPE` records, with one or more dimensions; variable-length string
+arrays raise *Type mismatch*.
 
-- `BLOAD` raises *Illegal function call* if the data doesn't fit in the array from that element
-  (like `GET`), and changes nothing.
+- If the file has more data than fits in the array from that element, the rest is ignored (QBasic
+  wrote it over whatever memory came after the array).
 - `BSAVE` raises *Illegal function call* if asked to save more bytes than the array holds.
 - The length is in bytes: 2 per INTEGER, 4 per LONG or SINGLE, 8 per DOUBLE. For a `GET` sprite, it is
   the image size (for example, `4 + width * height` in SCREEN 13).

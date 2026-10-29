@@ -635,7 +635,7 @@ el desplazamiento elige la página, no `SCREEN ,,apage`. Los registros vuelven a
 
 ### Arrays en memoria (VARSEG / VARPTR)
 
-QBLike da a cada array numérico una dirección en la memoria convencional emulada la primera vez que se usa
+QBLike da a cada array de números, de `STRING * n` o de registros `TYPE` una dirección en la memoria convencional emulada la primera vez que se usa
 `VARSEG` o `VARPTR` sobre uno de sus elementos. A partir de ahí `PEEK`, `POKE`, `BLOAD`, `BSAVE` y
 `GET`/`PUT ... SEG` ven los bytes del array en esa dirección, igual que en QBasic:
 
@@ -653,6 +653,8 @@ DEF SEG
   QBasic (los desplazamientos de más de 32767 salen negativos); `PEEK`/`POKE` los aceptan de las dos formas.
 - Una dirección que no pertenece a ningún array (fuera de las zonas de vídeo, BIOS y arrays) da
   *Illegal function call* en `PUT ... SEG`/`GET ... SEG`; ahí `PEEK` devuelve 0 y `POKE` no hace nada.
+- Los registros se guardan campo tras campo, como en QBasic, así que `BLOAD` carga un mapa de
+  registros `TYPE` guardado por un programa de QuickBASIC.
 - `REDIM` y `ERASE` de un array dinámico liberan su dirección; las cadenas y las variables simples no
   tienen dirección (`VARSEG`/`VARPTR` devuelven 0).
 
@@ -833,12 +835,12 @@ En un PC moderno no hay segmentos, así que QBLike emula los dos casos útiles:
 
 **1. Arrays** (sprites, mapas, tablas…). Si el desplazamiento se escribe como `VARPTR(array(índice))`, los
 datos se guardan desde el array o se cargan en él tal cual, byte a byte y a partir de ese elemento, sin
-importar `DEF SEG` ni el segmento guardado en el archivo. Sirve para cualquier array numérico
-(INTEGER, LONG, SINGLE, DOUBLE, de una o varias dimensiones); los de cadenas y de tipos `TYPE` dan
-*Type mismatch*.
+importar `DEF SEG` ni el segmento guardado en el archivo. Sirve para arrays de números (INTEGER,
+LONG, SINGLE, DOUBLE), de `STRING * n` y de registros `TYPE`, de una o varias dimensiones; los de cadenas
+de longitud variable dan *Type mismatch*.
 
-- `BLOAD` da *Illegal function call* si los datos no caben en el array desde ese elemento (como `GET`),
-  y no modifica nada.
+- Si el archivo tiene más datos de los que caben en el array desde ese elemento, el resto se ignora
+  (QBasic los escribía encima de la memoria que hubiera detrás del array).
 - `BSAVE` da *Illegal function call* si se pide guardar más bytes de los que tiene el array.
 - La longitud se cuenta en bytes: 2 por INTEGER, 4 por LONG o SINGLE, 8 por DOUBLE. Para un sprite de
   `GET`, es el tamaño de la imagen (por ejemplo, `4 + ancho * alto` en SCREEN 13).

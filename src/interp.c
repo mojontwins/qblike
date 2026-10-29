@@ -79,6 +79,52 @@ static int nmm, capmm, mm_last = -1;
 static const long mm_regions[][2] = { { 0x10000, 0x9F000 }, { 0xC0000, 0xF0000 } };
 
 static int elemsize(int t) { return t == T_INT ? 2 : (t == T_LNG || t == T_SNG) ? 4 : t == T_DBL ? 8 : 0; }
+/* bytes per element of an array, as in QBasic memory: numbers, STRING * n and TYPE records (0 for
+   variable-length strings, which have no fixed layout) */
+int arr_elemsize(Array *a) {
+    switch (a->t) {
+        case T_STR: return a->fixlen;
+        case T_UDT: return rs && rs->prog ? rs->prog->udts[a->udt].size : 0;
+        default: return elemsize(a->t);
+    }
+}
+/* byte k of a value laid out as in QBasic memory; with set, writes it */
+static int val_rawbyte(Value *v, long k, int set, int val) {
+    unsigned char b[8];
+    switch (v->t) {
+        case T_INT: case T_LNG: case T_SNG: case T_DBL: {
+            int es = elemsize(v->t);
+            if (k < 0 || k >= es) return 0;
+            if (v->t == T_INT) { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); }
+            else if (v->t == T_LNG) { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); }
+            else if (v->t == T_SNG) { float x = (float)v->n; memcpy(b, &x, 4); }
+            else { double x = v->n; memcpy(b, &x, 8); }
+            if (!set) return b[k];
+            b[k] = (unsigned char)val;
+            if (v->t == T_INT) { int16_t x; memcpy(&x, b, 2); v->n = x; }
+            else if (v->t == T_LNG) { int32_t x; memcpy(&x, b, 4); v->n = x; }
+            else if (v->t == T_SNG) { float x; memcpy(&x, b, 4); v->n = x; }
+            else { double x; memcpy(&x, b, 8); v->n = x; }
+            return 0;
+        }
+        case T_STR:
+            if (!v->fixlen || k < 0 || k >= v->fixlen) return 0;
+            if (k >= v->slen) return set ? 0 : 32;
+            if (set) { v->s[k] = (char)val; return 0; }
+            return (unsigned char)v->s[k];
+        case T_UDT: {
+            Udt *u = &rs->prog->udts[v->r->udt];
+            for (int i = 0; i < u->nfields; i++) {
+                Field *f = &u->f[i];
+                long fs = f->t == T_STR ? f->fixlen : f->t == T_UDT ? rs->prog->udts[f->udt].size : elemsize(f->t);
+                if (k < fs) return val_rawbyte(&v->r->f[i], k, set, val);
+                k -= fs;
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
 
 static void mm_forget(Array *a) {
     for (int i = 0; i < nmm; i++)
@@ -87,7 +133,7 @@ static void mm_forget(Array *a) {
 
 /* address of an array (allocating it if needed); -1 if out of emulated memory */
 static long mm_addr(Array *a) {
-    long need = ((long)a->count * elemsize(a->t) + 15) & ~15L;
+    long need = ((long)a->count * arr_elemsize(a) + 15) & ~15L;
     if (need <= 0) need = 16;
     for (int i = 0; i < nmm; i++) if (mm[i].a == a) {
         if (mm[i].size >= need) return mm[i].lin;
@@ -134,33 +180,19 @@ static Array *mm_find(long lin, long *boff) {
 }
 
 int mem_array_byte(Array *a, long boff) {
-    int es = elemsize(a->t);
+    int es = arr_elemsize(a);
+    if (es <= 0) return 0;
     long idx = boff / es;
     if (idx < 0 || idx >= a->count) return 0;
-    Value *v = &a->v[idx];
-    unsigned char b[8];
-    switch (a->t) {
-        case T_INT: { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); break; }
-        case T_LNG: { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); break; }
-        case T_SNG: { float x = (float)v->n; memcpy(b, &x, 4); break; }
-        default: { double x = v->n; memcpy(b, &x, 8); break; }
-    }
-    return b[boff % es];
+    return val_rawbyte(&a->v[idx], boff % es, 0, 0);
 }
 
 void mem_array_setbyte(Array *a, long boff, int val) {
-    int es = elemsize(a->t);
+    int es = arr_elemsize(a);
+    if (es <= 0) return;
     long idx = boff / es;
     if (idx < 0 || idx >= a->count) return;
-    Value *v = &a->v[idx];
-    unsigned char b[8];
-    int k = (int)(boff % es);
-    switch (a->t) {
-        case T_INT: { int16_t x = (int16_t)v->n; memcpy(b, &x, 2); b[k] = (unsigned char)val; memcpy(&x, b, 2); v->n = x; break; }
-        case T_LNG: { int32_t x = (int32_t)v->n; memcpy(b, &x, 4); b[k] = (unsigned char)val; memcpy(&x, b, 4); v->n = x; break; }
-        case T_SNG: { float x = (float)v->n; memcpy(b, &x, 4); b[k] = (unsigned char)val; memcpy(&x, b, 4); v->n = x; break; }
-        default: { double x = v->n; memcpy(b, &x, 8); b[k] = (unsigned char)val; memcpy(&x, b, 8); v->n = x; break; }
-    }
+    val_rawbyte(&a->v[idx], boff % es, 1, val);
 }
 
 /* PEEK/POKE on emulated array memory; return 0 if the address is not an array */
@@ -860,13 +892,15 @@ static double builtin_num(Expr *e) {
         case F_VARPTR: case F_VARSEG: {
             /* numeric array elements get an emulated address; anything else is 0, as before */
             Expr *x = e->args[0];
-            if (x->op != E_ARR || elemsize(x->type) == 0) return 0;
+            if (x->op != E_ARR) return 0;
             Array *a = arr_slot(x->scope, x->idx);
+            if (a->alive && arr_elemsize(a) == 0) return 0;
             if (!a->alive) { lval(x); }               /* implicit DIM, like any use */
             if (x->nargs != a->nd) rt_error(9);
             int idx[8];
             for (int i = 0; i < x->nargs && i < 8; i++) idx[i] = (int)qb_round_even(evn(x->args[i]));
-            long boff = arr_offset(a, idx) * elemsize(a->t);
+            if (arr_elemsize(a) == 0) return 0;
+            long boff = arr_offset(a, idx) * arr_elemsize(a);
             long lin = mm_addr(a);
             if (lin < 0) rt_error(7);
             long segv, offv;
@@ -1978,10 +2012,10 @@ static int exec(Frame *f, int pc) {
                                 if (ref->n != ra->nd) rt_error(9);
                                 int idx[8];
                                 for (int i = 0; i < ref->n && i < 8; i++) idx[i] = (int)qb_round_even(evn(s->args[ref->first + i]));
-                                rb = arr_offset(ra, idx) * elemsize(ra->t);
+                                rb = arr_offset(ra, idx) * arr_elemsize(ra);
                             }
                         }
-                        if (elemsize(ra->t) == 0) rt_error(13);
+                        if (arr_elemsize(ra) == 0) rt_error(13);
                         if (r == 0) { surf.a = ra; surf.boff = rb; sp = &surf; }
                         else { da = ra; dboff = rb; }
                     }
@@ -2254,7 +2288,16 @@ static int exec(Frame *f, int pc) {
             case S_VSYNC: gfx_waitvsync(); pc++; break;
             case S_WAIT: {
                 int port = (int)qb_round_even(evn(s->e1));
-                if (port == 0x3DA) gfx_waitvsync();
+                int am = (int)qb_round_even(evn(s->e2)) & 0xFF;
+                int xm = s->e3 ? (int)qb_round_even(evn(s->e3)) & 0xFF : 0;
+                if (port == 0x3DA || port == 0x3BA) {
+                    /* WAIT &H3DA, 8: until the next retrace begins (shows the frame).
+                       WAIT &H3DA, 8, 8: until the current retrace ends (at most ~1 ms), so both
+                       orders of the classic pair take exactly one frame */
+                    extern void gfx_waitvsync_end(void);
+                    if ((am & xm & 9) && !(am & ~xm & 9)) gfx_waitvsync_end();
+                    else gfx_waitvsync();
+                }
                 pc++;
                 break;
             }

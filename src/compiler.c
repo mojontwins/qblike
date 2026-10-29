@@ -3057,7 +3057,7 @@ static void compile_statement(void) {
                         expectop(')');
                         expectop(')');
                         if (isop(',') || at_stmt_end()) {
-                            if (sy->t == T_STR || sy->t == T_UDT) cerr("Type mismatch");
+                            /* numbers, STRING * n and TYPE records (checked when it runs) */
                             ST(si)->i1 = 1; ST(si)->i2 = scope; ST(si)->i3 = sy->idx;
                             done = 1;
                         } else { cc->pos = save; ST(si)->nargs = 0; }   /* VARPTR(...) inside a larger expression */

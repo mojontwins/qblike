@@ -239,6 +239,35 @@ static int text_to_lines(const char *data, int size, char ***out, int *outn, int
             lines[i] = o;
         }
     }
+    /* line continuation, as QBasic and QuickBASIC do when loading: a line ending in " _" (outside
+       strings and comments) goes on in the next line */
+    for (int i = 0; i + 1 < n; i++) {
+        const char *l = lines[i];
+        int len = (int)strlen(l), in_str = 0, cont = 0;
+        while (len > 0 && (l[len - 1] == ' ' || l[len - 1] == '\t')) len--;
+        if (len > 0 && l[len - 1] == '_' && (len == 1 || l[len - 2] == ' ' || l[len - 2] == '\t')) {
+            cont = 1;
+            for (int k = 0; k < len - 1; k++) {
+                if (l[k] == '"') in_str = !in_str;
+                else if (!in_str && l[k] == '\'') { cont = 0; break; }
+            }
+            if (in_str) cont = 0;
+        }
+        if (!cont) continue;
+        int keep = len - 1;
+        while (keep > 0 && (l[keep - 1] == ' ' || l[keep - 1] == '\t')) keep--;
+        const char *nx = lines[i + 1];
+        while (*nx == ' ' || *nx == '\t') nx++;
+        char *j = (char *)qb_alloc((size_t)keep + strlen(nx) + 2);
+        memcpy(j, l, (size_t)keep);
+        j[keep] = ' ';
+        strcpy(j + keep + 1, nx);
+        free(lines[i]); free(lines[i + 1]);
+        lines[i] = j;
+        memmove(&lines[i + 1], &lines[i + 2], sizeof(char *) * (size_t)(n - i - 2));
+        n--;
+        i--;   /* the joined line may continue again */
+    }
     /* detect QuickBASIC binary format */
     if (n > 0 && (unsigned char)lines[0][0] == 0xFC) {
         for (int i = 0; i < n; i++) free(lines[i]);

@@ -157,7 +157,8 @@ The `examples` folder includes `NAVES.BAS`, a complete game that uses all of thi
 `lib/directqb/DIRECTQB.BI` is a compatibility layer for DirectQB 1.61, the popular assembly game library
 for QuickBASIC: every DirectQB SUB and FUNCTION rewritten in QBLike BASIC. Old DirectQB games run by
 keeping their `'$INCLUDE: 'DIRECTQB.BI'` line (copy the file next to the game). See
-[lib/directqb/README.md](lib/directqb/README.md).
+[lib/directqb/README.md](lib/directqb/README.md). QuickBASIC programs made of several modules (a `.MAK`
+file) can be joined into one file with `tools/mak2bas.py`, which keeps each module's DEFtypes, DATA and TYPEs.
 
 ### Making executables
 
@@ -236,6 +237,7 @@ No build system is needed: it compiles with a single compiler command.
 | `src/image.c` | BMP and GIF loading (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
 | `src/beautify.c` | code formatter (Edit > Format Code) |
 | `lib/directqb/` | DirectQB 1.61 compatibility library (`DIRECTQB.BI`), its documentation and tests |
+| `tools/mak2bas.py` | joins the modules of a QuickBASIC 4.5 multi-module program (`.MAK`) into one QBLike program: `python3 tools/mak2bas.py GAME.MAK GAMEQB.BAS` |
 | `tools/help2md.py` | rebuilds `REFERENCE.md` from the built-in help: `qblike --help-dump > help.txt` then `python3 tools/help2md.py help.txt > REFERENCE.md` |
 | `src/doslike/` | dos-like (with a few small changes, below) |
 
@@ -438,7 +440,8 @@ La carpeta `examples` incluye `NAVES.BAS`, un juego completo que usa todo esto.
 `lib/directqb/DIRECTQB.BI` es una capa de compatibilidad con DirectQB 1.61, la popular librería en
 ensamblador para juegos en QuickBASIC: todos los SUB y FUNCTION de DirectQB reescritos en BASIC de QBLike.
 Los juegos de DirectQB funcionan conservando su línea `'$INCLUDE: 'DIRECTQB.BI'` (basta copiar el archivo
-junto al juego). Ver [lib/directqb/README_es.md](lib/directqb/README_es.md).
+junto al juego). Ver [lib/directqb/README_es.md](lib/directqb/README_es.md). Los programas de QuickBASIC hechos de varios módulos
+(un archivo `.MAK`) se pueden unir en un solo archivo con `tools/mak2bas.py`, que conserva los DEFtype, DATA y TYPE de cada módulo.
 
 ### Crear ejecutables
 
@@ -519,6 +522,7 @@ No hace falta ningún sistema de construcción: se compila con una sola orden de
 | `src/image.c` | carga de BMP y GIF (`LOADBMP`, `LOADGIF`, `LOADPAL`) |
 | `src/beautify.c` | formateador de código (Edit > Format Code) |
 | `lib/directqb/` | librería de compatibilidad con DirectQB 1.61 (`DIRECTQB.BI`), su documentación y sus pruebas |
+| `tools/mak2bas.py` | une los módulos de un programa multimódulo de QuickBASIC 4.5 (`.MAK`) en un solo programa de QBLike: `python3 tools/mak2bas.py JUEGO.MAK JUEGOQB.BAS` |
 | `tools/help2md.py` | regenera `REFERENCE.md` a partir de la ayuda integrada: `qblike --help-dump > help.txt` y luego `python3 tools/help2md.py help.txt > REFERENCE.md` |
 | `src/doslike/` | dos-like (con dos pequeños cambios, abajo) |
 

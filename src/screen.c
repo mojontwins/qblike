@@ -1626,15 +1626,15 @@ void gfx_draw(const char *s, int len) {
 /* -------- array byte view for GET/PUT -------- */
 int mem_array_byte(Array *a, long boff);
 void mem_array_setbyte(Array *a, long boff, int val);
-static int elem_size(Array *a) {
-    switch (a->t) { case T_INT: return 2; case T_LNG: return 4; case T_SNG: return 4; case T_DBL: return 8; }
-    return 0;
-}
+int arr_elemsize(Array *a);
+static int elem_size(Array *a) { return arr_elemsize(a); }
 static int arr_getbyte(Array *a, long boff) {
+    if (elem_size(a) <= 0) rt_error(13);
     if (boff < 0 || boff / elem_size(a) >= a->count) rt_error(5);
     return mem_array_byte(a, boff);
 }
 static void arr_setbyte(Array *a, long boff, int val) {
+    if (elem_size(a) <= 0) rt_error(13);
     if (boff < 0 || boff / elem_size(a) >= a->count) rt_error(5);
     mem_array_setbyte(a, boff, val);
 }
@@ -2058,6 +2058,11 @@ void gfx_waitvsync(void) {
     scr_present(1);
 }
 
+/* wait until the emulated retrace is over (WAIT &H3DA, 8, 8) */
+void gfx_waitvsync_end(void) {
+    while (vsync_status() & 8) sys_sleep(0);
+}
+
 /* ---- BSAVE / BLOAD ----
    File format: &HFD, segment, offset, length (16-bit little-endian words), then the data.
    Only video memory is emulated: segment &HA000 (graphics) and &HB800 (text, CGA). Other segments
@@ -2131,7 +2136,7 @@ static void arr_set_raw(Array *a, long idx, const unsigned char *b) {
 }
 
 void gfx_bload_array(const char *name, int namelen, Array *a, int index, int save, long len) {
-    if (a->t == T_STR || a->t == T_UDT) rt_error(13);
+    if (elem_size(a) <= 0) rt_error(13);   /* variable-length strings have no memory image */
     int es = elem_size(a);
     long avail = (long)(a->count - index) * es;
     if (save) {
@@ -2146,10 +2151,17 @@ void gfx_bload_array(const char *name, int namelen, Array *a, int index, int sav
     FILE *f = bfile_open(name, namelen, 0);
     int fseg; long foff, flen;
     bfile_read_header(f, &fseg, &foff, &flen);
-    if (flen > avail) { fclose(f); rt_error(5); }   /* like GET: the array is too small */
+    /* QBasic doesn't check: a file longer than the array overwrote the memory after it. Here
+       the bytes that don't fit are ignored */
+    if (flen > avail) flen = avail;
     unsigned char *buf = (unsigned char *)malloc((size_t)flen + 8);
     long n = (long)fread(buf, 1, (size_t)flen, f);
     fclose(f);
+    if (a->t == T_STR || a->t == T_UDT) {   /* records and fixed strings: byte by byte */
+        for (long i = 0; i < n; i++) mem_array_setbyte(a, (long)index * es + i, buf[i]);
+        free(buf);
+        return;
+    }
     for (long e = 0; e * es < n; e++) {
         unsigned char b[8];
         long take = n - e * es; if (take > es) take = es;

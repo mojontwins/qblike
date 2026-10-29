@@ -283,7 +283,7 @@ BLOAD filespec$, VARPTR(array(index))
 
 Loads a file saved with BSAVE.
 
-With VARPTR(array(index)) as offset the data is copied raw into the numeric array, byte by byte, from that element (DEF SEG and the segment in the file are ignored). Illegal function call if it does not fit:
+With VARPTR(array(index)) as offset the data is copied raw into the array (numbers, STRING \* n or TYPE records), byte by byte, from that element (DEF SEG and the segment in the file are ignored). Bytes that don't fit in the array are ignored:
 
 ```
 BLOAD "SHIP.SPR", VARPTR(ship%(0))
@@ -2927,7 +2927,7 @@ VARSEG(variable)
 
 Return the offset and the segment of a variable in memory.
 
-QBLike emulates real-mode addresses for the elements of numeric arrays: VARSEG/VARPTR of an element give an address where PEEK, POKE, BLOAD, BSAVE and GET/PUT ... SEG see that array's bytes (as INTEGER values, like in QBasic: offsets over 32767 are negative). Arrays get their address the first time VARSEG or VARPTR is used on them, inside the conventional memory range (&H1000-&H9FFF and &HC000-&HEFFF).
+QBLike emulates real-mode addresses for the elements of arrays of numbers, STRING \* n and TYPE records: VARSEG/VARPTR of an element give an address where PEEK, POKE, BLOAD, BSAVE and GET/PUT ... SEG see that array's bytes (as INTEGER values, like in QBasic: offsets over 32767 are negative). Arrays get their address the first time VARSEG or VARPTR is used on them, inside the conventional memory range (&H1000-&H9FFF and &HC000-&HEFFF).
 
 ```
 DIM spr%(129)
@@ -2937,7 +2937,7 @@ POKE VARPTR(spr%(2)), 15              ' first pixel of a GET image
 DEF SEG
 ```
 
-For other variables (scalars, strings) both return 0.
+Records are laid out field after field, as in QBasic (BLOAD can load a map of TYPE records saved by QuickBASIC). For other variables (scalars, variable-length strings) both return 0.
 
 See also: [DEF SEG](#kw-def-seg), [PEEK](#kw-peek), [POKE](#kw-poke), [BLOAD](#kw-bload)
 
