@@ -60,6 +60,7 @@ typedef struct C {
     int proc;           /* -1 module */
     SymTab *lsyms;
     char deftype[26];
+    int cont_stmt;      /* the statement just compiled (ELSE, ELSEIF ... THEN) lets another follow without ':' */
     char proc_deftype[26];
     Block blk[128];
     int nblk;
@@ -2422,6 +2423,19 @@ static void compile_statement(void) {
             if (acceptop(',')) { expectkw(KW_LOOP); ST(si)->i2 = 1; }
             return;
         }
+        /* ENDIF written as one word (accepted by QuickBASIC's editor, which turned it into END IF)
+           closes the block IF; a variable called ENDIF keeps working (ENDIF = ...) */
+        if (pi < 0 && !strcmp(base, "ENDIF") && !strpbrk(t->s, "%&!#$")) {
+            Tok *n = peekn(1);
+            Block *b = top_block();
+            if ((n->k == TK_EOL || n->k == TK_REM || (n->k == TK_OP && n->kw == ':')) && b && b->kind == BK_IF) {
+                adv();
+                if (b->jmpf >= 0) ST(b->jmpf)->i1 = cc->P->ncode;
+                for (int i = 0; i < b->ends.n; i++) ST(b->ends.v[i])->i1 = cc->P->ncode;
+                pop_block();
+                return;
+            }
+        }
         compile_assignment();
         return;
     }
@@ -2476,6 +2490,7 @@ static void compile_statement(void) {
             int si = emit(S_JMPF);
             ST(si)->e1 = c;
             b->jmpf = si;
+            cc->cont_stmt = 1;   /* ELSEIF c THEN statement: the statement belongs to this branch */
             return;
         }
         case KW_ELSE: {
@@ -2486,6 +2501,7 @@ static void compile_statement(void) {
             ST(b->jmpf)->i1 = cc->P->ncode;
             b->jmpf = -1;
             /* statements may follow ELSE on the same line */
+            cc->cont_stmt = 1;
             return;
         }
         case KW_END:
@@ -3242,9 +3258,11 @@ static void compile_line(const char *text) {
     for (;;) {
         if (cur()->k == TK_EOL || cur()->k == TK_REM) break;
         if (isop(':')) { adv(); continue; }
+        cc->cont_stmt = 0;
         compile_statement();
         if (isop(':')) { adv(); continue; }
         if (cur()->k == TK_EOL || cur()->k == TK_REM) break;
+        if (cc->cont_stmt) { cc->cont_stmt = 0; continue; }
         cerr("Expected: end-of-statement");
     }
 }

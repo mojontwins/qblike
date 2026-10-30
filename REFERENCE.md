@@ -1270,7 +1270,14 @@ IF condition1 THEN
 END IF
 ```
 
-Executes statements depending on conditions. A condition is true when it is not zero. The single-line form can contain several statements separated by colons, and THEN line / ELSE line jump to a label. The block form ends with END IF.
+Executes statements depending on conditions. A condition is true when it is not zero. The single-line form can contain several statements separated by colons, and THEN line / ELSE line jump to a label. The block form ends with END IF (ENDIF is accepted too). In the single-line form an ELSE belongs to the nearest IF, and what follows THEN or ELSE runs up to the next ELSE or the end of the line:
+
+```
+10 INPUT a$: IF a$ = "" THEN 10 ELSE PRINT "Hi "; a$
+IF a THEN IF b THEN PRINT 1 ELSE PRINT 2 ELSE PRINT 3
+```
+
+A block starts when nothing but a comment follows THEN. Statements may follow ELSE or ELSEIF ... THEN on the same line inside a block.
 
 ```
 IF x% > 10 THEN PRINT "Big" ELSE PRINT "Small"
